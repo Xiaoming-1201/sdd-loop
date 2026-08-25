@@ -13,10 +13,19 @@
     "examples/",
     "sdd-loop.json",
     "LICENSE",
+    "README.md",
     "index.js"
   ],
-  "keywords": ["opencode", "plugin", "sdd", "spec-driven-development", "workflow"],
+  "keywords": ["opencode", "plugin", "sdd", "spec-driven-development", "workflow", "agent", "ai"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xiaoming-1201/sdd-loop.git"
+  },
+  "homepage": "https://github.com/Xiaoming-1201/sdd-loop",
+  "bugs": {
+    "url": "https://github.com/Xiaoming-1201/sdd-loop/issues"
+  },
   "dependencies": {
     "@opencode-ai/plugin": "^1.18.13"
   }
