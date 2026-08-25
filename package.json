@@ -1,6 +1,6 @@
 {
   "name": "sdd-loop",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Closed-loop SDD workflow plugin for OpenCode — scene-aware orchestration with spec-driven development persistence",
   "type": "module",
   "main": "index.js",
@@ -14,6 +14,7 @@
     "sdd-loop.json",
     "LICENSE",
     "README.md",
+    "README.en.md",
     "index.js"
   ],
   "keywords": ["opencode", "plugin", "sdd", "spec-driven-development", "workflow", "agent", "ai"],
