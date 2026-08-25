@@ -1,0 +1,69 @@
+{
+  "name": "sdd-loop",
+  "version": "1.0.0",
+  "description": "Closed-loop SDD workflow plugin for OpenCode — self-contained, scene-aware orchestration with spec-driven development persistence",
+  "main": "index.js",
+  "files": [
+    "agent/",
+    "agents/",
+    "skills/",
+    "prompts/",
+    "templates/",
+    "examples/",
+    "sdd-loop.json",
+    "index.js"
+  ],
+  "agents": {
+    "sdd-loop": {
+      "role": "primary",
+      "prompt": "agent/sdd-loop.md",
+      "description": "SDD workflow orchestrator — scene detection, routing, delegation, SDD artifact management"
+    },
+    "spec-writer": {
+      "role": "subagent",
+      "prompt": "agents/spec-writer.md",
+      "description": "Drafts spec documents from clarified requirements"
+    },
+    "researcher": {
+      "role": "subagent",
+      "prompt": "agents/researcher.md",
+      "description": "External docs and library research with citations"
+    },
+    "scout": {
+      "role": "subagent",
+      "prompt": "agents/scout.md",
+      "description": "Codebase reconnaissance — locate files, symbols, patterns"
+    },
+    "implementer": {
+      "role": "subagent",
+      "prompt": "agents/implementer.md",
+      "description": "Bounded code implementation under explicit specs"
+    },
+    "reviewer": {
+      "role": "subagent",
+      "prompt": "agents/reviewer.md",
+      "description": "Dual-axis code review (Standards + Spec)"
+    },
+    "ui-designer": {
+      "role": "subagent",
+      "prompt": "agents/ui-designer.md",
+      "description": "UI/UX design and implementation"
+    }
+  },
+  "skills": {
+    "sdd-onboard": "skills/sdd-onboard/SKILL.md",
+    "sdd-grilling": "skills/sdd-grilling/SKILL.md",
+    "sdd-spec": "skills/sdd-spec/SKILL.md",
+    "sdd-design": "skills/sdd-design/SKILL.md",
+    "sdd-design-review": "skills/sdd-design-review/SKILL.md",
+    "sdd-tickets": "skills/sdd-tickets/SKILL.md",
+    "sdd-tdd": "skills/sdd-tdd/SKILL.md",
+    "sdd-review": "skills/sdd-review/SKILL.md",
+    "sdd-diagnose": "skills/sdd-diagnose/SKILL.md",
+    "spec-check": "skills/spec-check/SKILL.md"
+  },
+  "requires": {
+    "plugins": [],
+    "skills": []
+  }
+}

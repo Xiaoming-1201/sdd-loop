@@ -1,0 +1,26 @@
+{
+  "$schema": "./sdd-loop.schema.json",
+  "preset": "volcengine",
+  "presets": {
+    "deepseek": {
+      "sdd-loop": { "model": "deepseek-official/deepseek-v4-pro", "variant": "high", "displayName": "sdd-loop" },
+      "spec-writer": { "model": "deepseek-official/deepseek-v4-pro", "variant": "high" },
+      "design-writer": { "model": "deepseek-official/deepseek-v4-pro", "variant": "high" },
+      "researcher": { "model": "deepseek-official/deepseek-v4-flash", "variant": "low" },
+      "scout": { "model": "deepseek-official/deepseek-v4-flash", "variant": "low" },
+      "implementer": { "model": "deepseek-official/deepseek-v4-flash", "variant": "high" },
+      "reviewer": { "model": "deepseek-official/deepseek-v4-pro", "variant": "high" },
+      "ui-designer": { "model": "deepseek-official/deepseek-v4-pro", "variant": "medium" }
+    },
+    "volcengine": {
+      "sdd-loop": { "model": "volcengine-plan/deepseek-v4-pro", "variant": "high", "displayName": "sdd-loop" },
+      "spec-writer": { "model": "volcengine-plan/deepseek-v4-pro", "variant": "high" },
+      "design-writer": { "model": "volcengine-plan/deepseek-v4-pro", "variant": "high" },
+      "researcher": { "model": "volcengine-plan/deepseek-v4-flash", "variant": "low" },
+      "scout": { "model": "volcengine-plan/deepseek-v4-flash", "variant": "low" },
+      "implementer": { "model": "volcengine-plan/deepseek-v4-flash", "variant": "high" },
+      "reviewer": { "model": "volcengine-plan/glm-5.2", "variant": "high" },
+      "ui-designer": { "model": "volcengine-plan/doubao-seed-2.0-pro", "variant": "medium" }
+    }
+  }
+}

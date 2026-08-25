@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build / package output
+dist/
+
+# SDD workspace artifacts (personal, not for distribution)
+.workflow/
+
+# AI interaction records (privacy)
+ai-record/
+
+# Local tool caches
+.aspirecode/
+
+# Personal presentation material (not plugin source)
+述职材料/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
