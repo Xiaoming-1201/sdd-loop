@@ -71,6 +71,25 @@ sdd-loop（自包含插件）
 
 ### 安装步骤
 
+**方式 1：npm 安装（推荐，已发布到 npm）**
+
+```powershell
+npm install sdd-loop
+```
+
+然后在 `opencode.json` 的 `plugin` 数组添加包名：
+
+```jsonc
+{
+  "plugin": [
+    // 已有的插件保留...
+    "sdd-loop"
+  ]
+}
+```
+
+**方式 2：本地目录**
+
 1. 把 `sdd-loop/` 目录放到任意位置（或解压分发包）
 2. 在 OpenCode 配置目录的 `opencode.json` 的 `plugin` 数组添加该目录路径：
 
