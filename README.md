@@ -144,6 +144,33 @@ npm install sdd-loop
 
 切换模型只需改顶层 `preset` 字段，或直接修改对应 agent 的 `model` 值为你已配置的 provider 模型。
 
+### 配置覆盖机制（不修改插件文件）
+
+插件通过 `loadConfig()` 按**优先级从高到低**合并 `sdd-loop.json`（index.js）：
+
+```
+1. $OPENCODE_CONFIG_DIR/sdd-loop.json        ← 环境变量指定目录（最高）
+2. ~/.config/opencode/sdd-loop.json          ← 用户级（全局生效）
+3. <项目>/.opencode/sdd-loop.json            ← 项目级（推荐用法）
+4. 插件目录/sdd-loop.json                    ← 默认配置（最低，随包分发）
+```
+
+机制：插件默认配置是 base，每个**更高优先级的文件 deep-merge 覆盖**同名键。所以**不需要修改 node_modules 里的插件文件**——npm 更新也不会冲掉你的配置。
+
+推荐用法（项目级覆盖，例如换模型）——在项目根目录创建 `.opencode/sdd-loop.json`：
+
+```jsonc
+{
+  // 只写你要覆盖的部分，其余继承插件默认
+  "preset": "deepseek",
+  "agents": {
+    "spec-writer": { "model": "deepseek-chat" }
+  }
+}
+```
+
+用户级同理：把文件放到 `~/.config/opencode/sdd-loop.json` 即全局生效。
+
 ## 使用
 
 切换到 sdd-loop agent 后直接对话，无需特殊命令：

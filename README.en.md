@@ -144,6 +144,33 @@ Then add the package name to the `plugin` array in `opencode.json`:
 
 Switch models by changing the top-level `preset` field, or directly editing an agent's `model` value to a provider model you have configured.
 
+### Configuration override (without editing plugin files)
+
+The plugin merges `sdd-loop.json` via `loadConfig()` by **priority, highest first** (index.js):
+
+```
+1. $OPENCODE_CONFIG_DIR/sdd-loop.json        ← env-var directory (highest)
+2. ~/.config/opencode/sdd-loop.json          ← user-level (global)
+3. <project>/.opencode/sdd-loop.json         ← project-level (recommended)
+4. plugin dir/sdd-loop.json                  ← default config (lowest, ships with package)
+```
+
+Mechanism: the plugin default is the base, and each **higher-priority file deep-merges over the same keys**. So there's **no need to edit plugin files inside node_modules** — npm updates won't wipe your config.
+
+Recommended (project-scoped override, e.g. switching models) — create `.opencode/sdd-loop.json` in your project root:
+
+```jsonc
+{
+  // Only write what you want to override; everything else inherits the plugin default
+  "preset": "deepseek",
+  "agents": {
+    "spec-writer": { "model": "deepseek-chat" }
+  }
+}
+```
+
+Same for user-level: put the file at `~/.config/opencode/sdd-loop.json` to apply it globally.
+
 ## Usage
 
 Switch to the sdd-loop agent and just talk, no special commands:
