@@ -23,6 +23,7 @@ Clarify → Spec → Design → Review → Tickets → TDD Implement → Dual-ax
 - **Single entry**: user only talks to the sdd-loop agent; all sub-agents work behind the scenes
 - **Scene-adaptive**: auto-detects **12 routing targets** (4 main scenarios + 5 paths + 3 pre-checks), no commands to remember
 - **Spec-driven**: every feature has a spec and ticket breakdown — design before coding
+- **Two-track diagrams**: complex architecture diagrams use bundled **Archify** (pre-delivery validation gate keeps them readable, no crossing lines), simple ones use Mermaid
 - **Cross-session resume**: `.workflow/` artifacts persist; new sessions resume from the checkpoint automatically
 - **Zero external dependencies**: agents + skills all built-in, install and use
 - **Distributable**: one command to package a zip; receiver extracts and configures
@@ -77,6 +78,7 @@ sdd-loop (self-contained plugin)
 │   └── spec-check/              ← spec consistency check
 ├── prompts/scenarios/           ← 4 scenario flow definitions
 ├── templates/                   ← spec/design/ticket/changes/capability-map/STATUS templates
+├── archify/                     ← bundled Archify (complex architecture rendering, validate-gate readability, MIT)
 ├── examples/                    ← regression baseline samples
 ├── sdd-loop.json                ← multi-provider model preset config
 └── pack.ps1                     ← packaging script
@@ -214,6 +216,7 @@ Generates `dist/sdd-loop-<version>-<stamp>.zip` (includes node_modules and INSTA
 - Runtime dependency: only **@opencode-ai/plugin** (official OpenCode plugin SDK)
 - No dependency on oh-my-opencode-slim; optional coexistence, no interference
 - Built-in skills partially adapted from [Matt Pocock skills](https://github.com/mattpocock/skills) (MIT License, Copyright (c) 2026 Matt Pocock), noted in each SKILL.md header
+- Bundled **Archify** (`archify/`, complex architecture rendering, MIT License, Copyright (c) tt-a1i), see `archify/LICENSE`
 - This plugin: MIT License
 
 ## Upgrades

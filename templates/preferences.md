@@ -10,7 +10,8 @@
 
 ## 图规范偏好
 
-- **偏好**：架构图必须用 subgraph 分组、节点 ≤ 20、方向单一（来源：design:0001-xxx / changes:2026-08-21-xxx）
+- **偏好**：出图两轨制——复杂架构图用内置 Archify（产出 JSON IR → `archify validate` 过验证门 → `render` 出 SVG 内嵌 + 归档 JSON），简单图用 Mermaid（来源：design:0001-xxx / changes:2026-08-21-xxx）
+- **偏好**：Mermaid 架构图必须用 subgraph 分组、节点 ≤ 20、方向单一、禁用 ELK（来源：design:0001-xxx / changes:2026-08-21-xxx）
 
 ## 命名习惯
 

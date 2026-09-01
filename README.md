@@ -23,6 +23,7 @@ sdd-loop 把这件事做成了一条**可编排的闭环流水线**：
 - **单一入口**：用户只跟一个 sdd-loop agent 对话，子 agent 全部幕后执行
 - **场景自适应**：自动识别 **12 类路由目标**（4 大场景 + 5 条路径 + 3 前置检查），无需记住任何命令
 - **规格驱动**：每个功能都有 spec 文档和 ticket 拆解，先设计后编码
+- **出图两轨制**：复杂架构图用内置 **Archify**（交付前验证门保证可读性、线不乱），简单图用 Mermaid
 - **跨会话恢复**：`.workflow/` 产物持久化，新会话自动从断点继续
 - **零外部依赖**：agents + skills 全部内置，安装即用
 - **可分发**：一条命令打包成 zip，接收方解压配置即可用
@@ -77,6 +78,7 @@ sdd-loop（自包含插件）
 │   └── spec-check/              ← spec 一致性检查
 ├── prompts/scenarios/           ← 4 个场景的流程定义
 ├── templates/                   ← spec/design/ticket/changes/capability-map/STATUS 模板
+├── archify/                     ← 内置 Archify（复杂架构图渲染，验证门保证可读性，MIT）
 ├── examples/                    ← 回归基线样本
 ├── sdd-loop.json                ← 多 provider 模型预设配置
 └── pack.ps1                     ← 打包分发脚本
@@ -218,6 +220,7 @@ powershell -ExecutionPolicy Bypass -File "D:\path\to\sdd-loop\pack.ps1"
 - 运行时依赖仅 **@opencode-ai/plugin**（OpenCode 官方插件 SDK）
 - 不依赖 oh-my-opencode-slim，可选共存、互不干扰
 - 内置 skills 部分流程改编自 [Matt Pocock skills](https://github.com/mattpocock/skills)（MIT License, Copyright (c) 2026 Matt Pocock），已在各 SKILL.md 头部注明
+- 内置 **Archify**（`archify/`，复杂架构图渲染，MIT License, Copyright (c) tt-a1i），见 `archify/LICENSE`
 - 本插件：MIT License
 
 ## 升级
