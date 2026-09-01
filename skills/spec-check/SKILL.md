@@ -47,15 +47,15 @@ Return a structured result:
 
 ```json
 {
-  "specsScanned": ["specs/001-用户登录.md"],
+  "specsScanned": [".workflow/specs/001-用户登录.md"],
   "affectedSpecs": [
     {
-      "spec": "specs/001-用户登录.md",
+      "spec": ".workflow/specs/001-用户登录.md",
       "affectedConstraints": ["登录验证3次重试限制"],
       "recommendation": "轻量 spec 增量：补充安全性约束"
     }
   ],
-  "unaffectedSpecs": ["specs/002-权限管理.md"],
+  "unaffectedSpecs": [".workflow/specs/002-权限管理.md"],
   "summary": "改动触及 1 个 spec 的显式约束，建议轻量 spec 增量"
 }
 ```

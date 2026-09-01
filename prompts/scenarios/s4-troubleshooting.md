@@ -28,7 +28,7 @@ You are executing a bug diagnosis and fix workflow. The user reports something b
    **A: Restore intent (spec is correct, code was wrong)**
    - Example: spec says "3 retries", code bug caused 0 retries
    - Action: done, spec unchanged
-   - Record in changes/
+   - Record in `.workflow/changes/`
 
    **B: Reveal spec gap (spec is too vague, needs constraint)**
    - Example: spec says "validate credentials", bug was SQL injection
@@ -44,7 +44,7 @@ You are executing a bug diagnosis and fix workflow. The user reports something b
    - If the diagnosis reveals a structural/architectural problem:
      → Do NOT auto-escalate
      → Inform user: "这个 bug 的根因是架构问题，建议走 Scenario 2 或人工处理"
-     → Record in changes/
+     → Record in `.workflow/changes/`
 
 6. **Update STATUS.md**
    - If this interrupted another scenario → restore previous active
@@ -64,4 +64,4 @@ You are executing a bug diagnosis and fix workflow. The user reports something b
 - **No fix without a feedback loop** (sdd-diagnose Phase 1 requirement)
 - **3-way split, not 2-way**: A (restore) / B (spec gap) / C (requirement change)
 - **Architecture problems are not auto-escalated** — inform user, let them decide
-- **Hotfix path**: ship first, code-review in next session; record in changes/
+- **Hotfix path**: ship first, code-review in next session; record in `.workflow/changes/`

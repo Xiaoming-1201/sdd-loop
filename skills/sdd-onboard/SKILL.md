@@ -1,11 +1,11 @@
 ---
 name: sdd-onboard
-description: First-time onboarding into an existing (legacy) project with no .workflow/ docs — scout the architecture, build the capability map, seed the glossary, and route the current request. Run once when the project has no .workflow/ or an empty specs/.
+description: First-time onboarding into an existing (legacy) project with no .workflow/ docs — scout the architecture, build the capability map, seed the glossary, and route the current request. Run once when the project has no .workflow/ or an empty `.workflow/specs/`.
 ---
 
 # sdd-onboard
 
-存量项目接入 —— 对**没有 sdd-loop 文档**的既有代码库做一次性接入，建立后续迭代的上下文基础。只在项目无 `.workflow/` 或 `specs/` 为空时运行；接入后后续需求直接查 capability-map，不再重复接入。
+存量项目接入 —— 对**没有 sdd-loop 文档**的既有代码库做一次性接入，建立后续迭代的上下文基础。只在项目无 `.workflow/` 或 `.workflow/specs/` 为空时运行；接入后后续需求直接查 capability-map，不再重复接入。
 
 ## When to run
 

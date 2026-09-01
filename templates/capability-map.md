@@ -9,8 +9,8 @@ updated: <YYYY-MM-DD>
 
 | 能力域 | 核心代码区域 | 关联 spec | 关联 design | 状态 |
 |--------|-------------|-----------|-------------|------|
-| 待办事项 | src/todos/ | specs/001-待办事项.md | designs/001.md | completed |
-| 用户登录 | src/auth/ | specs/002-用户登录.md | designs/002.md | in-progress |
+| 待办事项 | src/todos/ | .workflow/specs/001-待办事项.md | .workflow/designs/001.md | completed |
+| 用户登录 | src/auth/ | .workflow/specs/002-用户登录.md | .workflow/designs/002.md | in-progress |
 
 ## 维护规则
 

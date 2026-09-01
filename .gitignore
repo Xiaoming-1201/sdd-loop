@@ -16,6 +16,9 @@ ai-record/
 # Personal presentation material (not plugin source)
 述职材料/
 
+# Blog drafts (personal, not for distribution)
+docs/
+
 # OS / editor
 .DS_Store
 Thumbs.db

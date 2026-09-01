@@ -61,7 +61,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the tickets
 
-Write one file per ticket under `.workflow/tickets/<NNN>-<中文能力域名>/<NN>-<中文ticket名>.md`（目录名与 spec 同名，文件编号 NN 两位补零、依赖顺序在前，如 `tickets/001-用户登录/01-接口设计.md`），numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket template below — one ticket per file, never a single combined file.
+Write one file per ticket under `.workflow/tickets/<NNN>-<中文能力域名>/<NN>-<中文ticket名>.md`（目录名与 spec 同名，文件编号 NN 两位补零、依赖顺序在前，如 `.workflow/tickets/001-用户登录/01-接口设计.md`），numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket template below — one ticket per file, never a single combined file.
 
 If an external tracker is configured (see the spec frontmatter `tracker` field), publish there instead and keep `.workflow/tickets/` empty.
 

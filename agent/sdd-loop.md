@@ -60,7 +60,7 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 每次新会话开始时：
 
 0. **读取环境配置**：读取 `.workflow/env.json`（由 sdd-onboard 环境探测产出）。
-   - 缺失且 `.workflow/` 与 `specs/` 已存在 → 提示用户走 sdd-onboard re-sync（Mode 2）或直接执行环境探测步骤（无需重跑完整 onboard）
+   - 缺失且 `.workflow/` 与 `.workflow/specs/` 已存在 → 提示用户走 sdd-onboard re-sync（Mode 2）或直接执行环境探测步骤（无需重跑完整 onboard）
    - 缺失且无 `.workflow/` → 提示用户先完成 sdd-onboard（Mode 1 完整接入）
    - 存在 → 记录 `vcs.type`（git/none）与测试/构建命令，后续所有依赖 git 的能力按此分支
 1. 检查 `.workflow/STATUS.md` 是否存在
@@ -88,9 +88,9 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 
 ## 场景路由
 
-从用户输入 + 项目现状（STATUS.md + specs/ + capability-map + git status）选择场景。决策顺序：
+从用户输入 + 项目现状（STATUS.md + `.workflow/specs/` + capability-map + git status）选择场景。决策顺序：
 
-> **环境适配**：路由决策输入中的 `git status` 仅在 `env.json.vcs.type == "git"` 时读取；无 git 环境跳过该项，以文件 mtime 或用户确认替代。其余输入（STATUS.md、specs/、capability-map）不受影响。
+> **环境适配**：路由决策输入中的 `git status` 仅在 `env.json.vcs.type == "git"` 时读取；无 git 环境跳过该项，以文件 mtime 或用户确认替代。其余输入（STATUS.md、`.workflow/specs/`、capability-map）不受影响。
 
 ### 快速路由查找表（先查这个，命中即路由，不逐层判断）
 
@@ -119,7 +119,7 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
            → 再按下方规则路由新请求（新请求可能是任何场景，包括非编码查询）
 
 -1. 存量项目接入检查
-   项目无 .workflow/ 目录，或 specs/ 为空？
+   项目无 .workflow/ 目录，或 `.workflow/specs/` 为空？
    → 是 → 先执行 sdd-onboard（一次性接入）：侦察架构 → 建 capability-map → 填充 context.md
            → 然后按下方规则路由本次请求（此时 capability-map 已建立）
 
@@ -230,7 +230,19 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 - 路由确定场景的**同一时刻**，立即在 `.workflow/STATUS.md` 写入该任务的 active 记录（格式：`[in-progress] Scenario N: <任务描述>` 或 `[investigating] bug: <症状>`），然后才开始执行场景流程。
 - **顺序必须如此**：路由 → 写 STATUS.md active → 才允许调用任何工具（glob/grep/read/task/编辑等）。不得先侦察、先搜索、先委托，再补写状态。
 - 快速路径/重构路径/调研路径/维护路径同样适用：进入路径即写 active。
-- 若 `.workflow/` 尚未初始化（无 STATUS.md），先创建它再写记录。
+- 若 `.workflow/` 尚未初始化（无 STATUS.md），先创建 `.workflow/` 及其标准子目录（**仅**以下结构），然后写 active 记录：
+  ```
+  .workflow/
+  ├── STATUS.md
+  ├── context.md
+  ├── capability-map.md
+  ├── env.json
+  ├── specs/
+  ├── designs/
+  ├── tickets/
+  └── changes/
+  ```
+  - **硬约束**：SDD 产物目录**只**建在 `.workflow/` 下。**绝对不得**在项目根目录创建 `specs`、`designs`、`changes`、`tickets` 同名目录——一旦发现根目录出现这些目录，视为流程失败，须删除并迁移到 `.workflow/` 下。
 - 这是**必需步骤**，不是可选优化——它是插队检测（路由步骤 -2）和崩溃恢复的数据基础。
 
 **⚠️ 关键节点调用 sdd-workflow-check 工具**：
@@ -273,7 +285,7 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 - `.workflow/STATUS.md` — gitignored，个人工作台
 - `.workflow/tickets/` — gitignored，仅无外部 tracker 时使用
 - `.workflow/changes/` — gitignored，轻量变更记录
-- `.workflow/context.md` — committed，由 reviewer 审查后写入，探索结论写入 changes/ 而非 context.md
+- `.workflow/context.md` — committed，由 reviewer 审查后写入，探索结论写入 `.workflow/changes/` 而非 context.md
 
 创建新文件时，使用 `templates/` 下的对应模板。
 

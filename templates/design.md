@@ -33,7 +33,7 @@ related_issues: [<issue/ticket refs, if any>]
 
 Module/component breakdown and their responsibilities, dependencies, and boundaries.
 
-**图（必填）**: 架构图 via Mermaid `flowchart`，带 init 样式 + classDef 着色 + 图标题：
+**图（必填）**: 架构图 via Mermaid `flowchart`，带 init 样式 + classDef 着色 + 图标题；**生成前先读末尾「图的使用规范 → 图的生成规范」**（方向单一 / subgraph 分组 / 节点≤20·边≤30 / 统一 init / 禁用 ELK）：
 
 图 1-1：新增模块与既有模块的依赖关系
 
@@ -285,7 +285,28 @@ Edge cases, error paths, failure modes, and risks with mitigations.
 4. **可渲染**：写完后按 Mermaid 语法自查（节点闭合、关系方向、代码块闭合）——坏图比没图更糟
 5. **样式统一**：使用下方「标准样式」的 Mermaid 配置，全文档一致
 
+### 图的生成规范（强制，生成时逐条对照）
+
+> 背景：OpenCode 预览**不支持 ELK 布局**（`flowchart-elk` / `layout: elk` 会静默回退到 dagre）。
+> 因此**禁用 ELK**，只靠 dagre 约束缓解 + 统一 init 配置提升可读性。以下每条都必须满足。
+
+1. **方向单一**：全图统一用 `flowchart TD`（纵向）或 `flowchart LR`（横向）之一，**不得在同一图内混用方向**；决策/时序型内容改用 `sequenceDiagram`。
+2. **分组（subgraph）**：涉及多个模块/层次/域时，**必须**用 `subgraph` 分组（按模块或层次分域），禁止所有节点平铺直连。
+3. **规模上限**：单图 **节点 ≤ 20、边 ≤ 30**；超限**必须拆成多张子图**，每张图一个主题（如"架构总览"一张 + 各模块细分布局各自成图）。
+4. **统一 init 配置模板**（每张 flowchart 顶部带，方向按第 1 条选 `TD`/`LR` 之一）：
+   ```mermaid
+   %%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 35, "rankSpacing": 45, "padding": 12}, "themeVariables": {"lineColor": "#475569", "primaryTextColor": "#1F2937"}}}%%
+   flowchart TD
+   ```
+5. **反模式规避**（显式禁止）：
+   - 节点 ID 用简单字母数字（如 `A`、`B`、`UserService`），**不得**用保留字（`end`/`class`/`subgraph`）、空格、连字符开头、尾标点；
+   - 中文/含特殊字符的标签**必须加引号**：`A["用户登录"]`（用双引号，不用单引号）；
+   - 边**少写长文案**，描述尽量放节点内；跨层长边尽量用 subgraph 分组消化。
+6. **禁用 ELK**：不要使用 `flowchart-elk` 或 `layout: elk`（OpenCode 预览不支持，会回退 dagre）。
+
 ### 标准样式（Mermaid 统一配置）
+
+> init 配置以「图的生成规范」第 4 条的统一模板为准（themeVariables 可叠加在模板之上）。
 
 **开头加 init 块统一主题**（避免默认浅色/暗色随渲染器漂移）：
 

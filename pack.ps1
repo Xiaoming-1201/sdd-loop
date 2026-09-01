@@ -37,8 +37,8 @@ $stage = Join-Path $env:TEMP ("sdd-loop-pack-" + $PID)
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage | Out-Null
 
-# ---- copy plugin files (exclude dist / .git / .slim / node_modules / .workflow / ai-record / .aspirecode) ----
-$excludeDirs = @("dist", ".git", ".slim", "node_modules", ".workflow", "ai-record", ".aspirecode")
+# ---- copy plugin files (exclude dist / .git / .slim / node_modules / .workflow / ai-record / .aspirecode / docs) ----
+$excludeDirs = @("dist", ".git", ".slim", "node_modules", ".workflow", "ai-record", ".aspirecode", "docs")
 Get-ChildItem -LiteralPath $PluginDir -Force | ForEach-Object {
     $skip = $false
     foreach ($e in $excludeDirs) {

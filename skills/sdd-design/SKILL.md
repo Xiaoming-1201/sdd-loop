@@ -36,6 +36,25 @@ Use `templates/design.md`（10 章完整模板）作为**唯一模板**，按其
 4. **Renders**: Mermaid syntax valid (nodes closed, relations directed, code fences closed).
 5. **Consistent style**: use the standard styling below across the whole document.
 
+### 图的生成规范（强制）——唯一标准：`templates/design.md`「图的生成规范」
+
+> 生成任何 Mermaid 图前，先读 `templates/design.md` 的「图的生成规范」，本节为执行摘要，冲突时以模板为准。
+> 背景：OpenCode 预览**不支持 ELK 布局**（`flowchart-elk` / `layout: elk` 会静默回退 dagre），因此**禁用 ELK**，只靠 dagre 约束缓解 + 统一 init 配置。
+
+1. **方向单一**：全图统一 `flowchart TD` 或 `flowchart LR` 之一，不得混用方向；决策/时序型内容改用 `sequenceDiagram`。
+2. **分组（subgraph）**：涉及多个模块/层次/域时**必须**用 `subgraph` 分组（按模块或层次分域），禁止节点平铺直连。
+3. **规模上限**：单图**节点 ≤ 20、边 ≤ 30**；超限**必须拆成多张子图**，每张图一个主题（如"架构总览"一张 + 各模块细分布局各自成图）。
+4. **统一 init 配置模板**（每张 flowchart 顶部带）：
+   ```mermaid
+   %%{init: {"theme": "base", "flowchart": {"curve": "basis", "nodeSpacing": 35, "rankSpacing": 45, "padding": 12}, "themeVariables": {"lineColor": "#475569", "primaryTextColor": "#1F2937"}}}%%
+   flowchart TD
+   ```
+5. **反模式规避**：
+   - 节点 ID 用简单字母数字（如 `A`、`B`、`UserService`），不得用保留字（`end`/`class`/`subgraph`）、空格、连字符开头、尾标点；
+   - 中文/含特殊字符的标签必须加引号：`A["用户登录"]`（用双引号，不用单引号）；
+   - 边少写长文案，描述尽量放节点内；跨层长边尽量用 subgraph 分组消化。
+6. **禁用 ELK**：不要使用 `flowchart-elk` 或 `layout: elk`（OpenCode 预览不支持，会回退 dagre）。
+
 ### Standard Mermaid styling
 
 **Unified theme via init block** (prevents renderer drift):

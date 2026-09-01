@@ -22,7 +22,7 @@
 
 按 `templates/design.md`（10 章完整模板）的结构产出设计文档，写入 `.workflow/designs/<NNN>-<中文名>.md`（与对应 spec 同名）：
 
-1. 模块设计（§1 必须含可渲染的 Mermaid 架构图）
+1. 模块设计（§1 必须含可渲染的 Mermaid 架构图；生成前先读 `templates/design.md`「图的生成规范」）
 2. 接口设计
 3. 数据库设计
 4. 安全设计
@@ -37,6 +37,7 @@
 
 - 设计的是"怎么做"（how），不是"做什么"（what）——spec 已决定 what
 - 架构图必须为 Mermaid（flowchart）且可渲染（节点、关系、闭合代码块）
+- **架构图严格按 `templates/design.md`「图的生成规范」生成**：方向单一（全图统一 `flowchart TD` 或 `flowchart LR`，不混用）；多模块/多域必须用 subgraph 分组；单图节点 ≤ 20、边 ≤ 30，超限拆多张子图（如"架构总览"一张 + 各模块分图）；每张 flowchart 顶部带统一 init 配置；**禁用 `flowchart-elk` / `layout: elk`**（OpenCode 预览不支持，会回退 dagre）
 - 每章不适用时显式声明"不适用"，不得留空
 - 文档使用中文
 
