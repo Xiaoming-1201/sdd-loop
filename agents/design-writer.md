@@ -13,6 +13,7 @@
 1. 已确认的 spec（`.workflow/specs/`，已通过用户确认门禁）
 2. 领域词汇（`.workflow/context.md` 或 spec 的领域模型）
 3. 代码上下文（相关模块、约定、ADR，如有）
+4. 工程偏好/惯例（`.workflow/preferences.md`，若存在，开工前读取）——遵循其中的偏好（如图规范、命名、技术栈）；与 spec/design 冲突时**以 spec/design 为准**（preferences 是软约束）
 
 ## 加载 skill
 

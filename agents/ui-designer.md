@@ -14,6 +14,7 @@
 - UI 任务描述（做什么、给谁用）
 - 现有界面上下文（相关文件、设计约定）
 - 功能约束（来自 spec）
+- `.workflow/preferences.md`（若存在，开工前读取）——工程偏好/惯例（命名、代码风格、图规范等），遵循其中与 UI 相关的部分；与 spec/design 冲突时**以 spec/design 为准**（preferences 是软约束）
 
 ## 输出
 

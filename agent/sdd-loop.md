@@ -237,12 +237,14 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
   ├── context.md
   ├── capability-map.md
   ├── env.json
+  ├── preferences.md
   ├── specs/
   ├── designs/
   ├── tickets/
   └── changes/
   ```
   - **硬约束**：SDD 产物目录**只**建在 `.workflow/` 下。**绝对不得**在项目根目录创建 `specs`、`designs`、`changes`、`tickets` 同名目录——一旦发现根目录出现这些目录，视为流程失败，须删除并迁移到 `.workflow/` 下。
+- **偏好沉淀机制**：任务收尾 / 设计评审 / 代码审查后，若发现**反复出现的工程偏好/惯例**（图规范、命名、技术栈、代码风格、验收标准），写入 `.workflow/preferences.md`（遵循 `templates/preferences.md` 格式，追加条目并注明来源引用）。`preferences.md` 是团队共享、committed（与 context.md 同级待遇）；探索性一次性结论写 `changes/`，**可复用的稳定偏好**才写 preferences.md。
 - 这是**必需步骤**，不是可选优化——它是插队检测（路由步骤 -2）和崩溃恢复的数据基础。
 
 **⚠️ 关键节点调用 sdd-workflow-check 工具**：
@@ -286,6 +288,7 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 - `.workflow/tickets/` — gitignored，仅无外部 tracker 时使用
 - `.workflow/changes/` — gitignored，轻量变更记录
 - `.workflow/context.md` — committed，由 reviewer 审查后写入，探索结论写入 `.workflow/changes/` 而非 context.md
+- `.workflow/preferences.md` — committed，工程偏好/惯例（团队共享）
 
 创建新文件时，使用 `templates/` 下的对应模板。
 

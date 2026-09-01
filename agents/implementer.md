@@ -4,6 +4,8 @@
 
 ## 前置步骤（强制，按任务类型区分）
 
+**开工前（无论哪种任务类型）**：读取 `.workflow/preferences.md`（若存在），遵循其中的工程偏好/惯例（命名、代码风格、技术栈等）；与 spec/design/任务描述冲突时**以 spec/design 为准**（preferences 是软约束）。
+
 **有 spec/design 的完整流程（S1/S2 及含设计文档的增量）：**
 
 1. **读取 spec**：收到 spec 路径后，必须先 read 该文件，理解本 ticket 对应的用户故事与验收标准。

@@ -13,6 +13,7 @@ You receive from the orchestrator:
 2. Domain vocabulary (from context.md or grilling output)
 3. Existing codebase context (if applicable)
 4. Any relevant ADRs
+5. 工程偏好/惯例（`.workflow/preferences.md`，若存在，开工前读取）——遵循其中的命名/技术栈偏好；与已澄清需求冲突时**以需求为准**（preferences 是软约束）
 
 ## Output
 
