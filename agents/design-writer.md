@@ -37,7 +37,7 @@
 ## 质量要求
 
 - 设计的是"怎么做"（how），不是"做什么"（what）——spec 已决定 what
-- **架构图两轨制**：复杂架构图（多模块/多域/节点多/易线乱）**用 Archify**——产出 `archify` JSON IR（schema 见 `archify/schemas/`）→ `node archify/bin/archify.mjs validate architecture <json> --json` 过验证门（`ok: false` 按诊断修复到 `ok: true`）→ `render` 出 HTML → 提取内联 `<svg>` 内嵌进 design.md + 归档 JSON IR 到 `.workflow/designs/<NNN>-<中文名>.architecture.json`；简单图（单层、≤12 节点）用 **Mermaid**
+- **架构图两轨制**：复杂架构图（多模块/多域/节点多/易线乱）**用 Archify**——Archify 内置在**插件目录**下（`<插件目录>/archify/`，非项目根；先定位插件目录再调用）：产出 `archify` JSON IR（schema 见 `<插件目录>/archify/schemas/`）→ `node <插件目录>/archify/bin/archify.mjs validate architecture <json> --json` 过验证门（`ok: false` 按诊断修复到 `ok: true`）→ `render` 出 HTML → 提取内联 `<svg>` 内嵌进 design.md + 归档 JSON IR 到 `.workflow/designs/<NNN>-<中文名>.architecture.json`；简单图（单层、≤12 节点）用 **Mermaid**
 - **Mermaid 图严格按 `templates/design.md`「图的生成规范」轨道 B 生成**：方向单一（全图统一 `flowchart TD` 或 `flowchart LR`，不混用）；多模块/多域必须用 subgraph 分组；单图节点 ≤ 20、边 ≤ 30，超限拆多张子图（如"架构总览"一张 + 各模块分图）；每张 flowchart 顶部带统一 init 配置；**禁用 `flowchart-elk` / `layout: elk`**（OpenCode 预览不支持，会回退 dagre）
 - 每章不适用时显式声明"不适用"，不得留空
 - 文档使用中文

@@ -43,9 +43,11 @@ Use `templates/design.md`（10 章完整模板）作为**唯一模板**，按其
 
 **轨道 A：Archify（复杂架构图首选）**
 
-1. 产出 Archify JSON IR（`architecture` 类型）：components 手排 `pos`/`size`、boundaries 分域、connections 标 `fromSide`/`toSide`/`variant`/`label`。schema 见 `archify/schemas/`，参考 `archify/examples/`。主节点 ≤ 12。
-2. **过验证门（必做）**：`node archify/bin/archify.mjs validate architecture <input.json> --json`；`ok: false` → 按诊断修复到 `ok: true`。绝不跳过验证直接渲染。
-3. **渲染并嵌入**：`node archify/bin/archify.mjs render architecture <input.json> <output.html>`，从 HTML 提取内联 `<svg>` 内嵌进 design.md，HTML 路径记入文档。
+> Archify 内置在**插件目录**下（`<插件目录>/archify/`，非项目根）。执行 CLI 前先定位插件目录（询问编排器给绝对路径），用可解析路径调用。
+
+1. 产出 Archify JSON IR（`architecture` 类型）：components 手排 `pos`/`size`、boundaries 分域、connections 标 `fromSide`/`toSide`/`variant`/`label`。schema 见 `<插件目录>/archify/schemas/`，参考 `<插件目录>/archify/examples/`。主节点 ≤ 12。
+2. **过验证门（必做）**：`node <插件目录>/archify/bin/archify.mjs validate architecture <input.json> --json`；`ok: false` → 按诊断修复到 `ok: true`。绝不跳过验证直接渲染。
+3. **渲染并嵌入**：`node <插件目录>/archify/bin/archify.mjs render architecture <input.json> <output.html>`，从 HTML 提取内联 `<svg>` 内嵌进 design.md，HTML 路径记入文档。
 4. **归档**：`.workflow/designs/<NNN>-<中文名>.architecture.json`。
 
 **轨道 B：Mermaid（简单图/时序/ER/状态图）**

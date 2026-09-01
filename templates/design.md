@@ -292,15 +292,16 @@ Edge cases, error paths, failure modes, and risks with mitigations.
 
 #### 轨道 A：Archify（复杂架构图首选）
 
-> Archify 由插件内置（`archify/` 目录，MIT）。它把布局判断权交给 agent（手排坐标），并用**交付前原子验证门**（validate）杜绝线乱/重叠/连线穿节点——这正是 Mermaid dagre 自动布局解决不了的问题。
+> Archify 由插件内置（**插件目录**下的 `archify/` 子目录，MIT）。它把布局判断权交给 agent（手排坐标），并用**交付前原子验证门**（validate）杜绝线乱/重叠/连线穿节点——这正是 Mermaid dagre 自动布局解决不了的问题。
+> **路径注意**：`archify/bin/archify.mjs`、`archify/schemas/` 都在**插件安装目录**下（非项目根目录）。执行 CLI 时先定位插件目录（如 `~/.config/opencode/<sdd-loop>/archify/`，或询问编排器提供绝对路径），用**可解析的绝对/相对路径**调用，不要假设项目根有 `archify/`。
 
-1. **产出 Archify JSON IR**（`architecture` 类型）：components（手排 `pos`/`size`）、boundaries（`region`/`security-group` 分域）、connections（标 `fromSide`/`toSide`/`variant`/`label`）。schema 见 `archify/schemas/`，参考 `archify/examples/`（如 `production-deployment.architecture.json`）。
+1. **产出 Archify JSON IR**（`architecture` 类型）：components（手排 `pos`/`size`）、boundaries（`region`/`security-group` 分域）、connections（标 `fromSide`/`toSide`/`variant`/`label`）。schema 见 `<插件目录>/archify/schemas/`，参考 `<插件目录>/archify/examples/`（如 `production-deployment.architecture.json`）。
    - **主节点 ≤ 12**（Archify 作者约束，超限拆图）
    - 连线**垂直穿越** boundary 边界（`fromSide`/`toSide` 对齐），禁止沿边界滑行；label 用 `labelAt`/`labelDy` 定位到空隙，避免重叠
-2. **过验证门（必做）**：`node archify/bin/archify.mjs validate architecture <input.json> --json`
+2. **过验证门（必做）**：`node <插件目录>/archify/bin/archify.mjs validate architecture <input.json> --json`
    - `ok: false` → **按诊断逐条修复**（它会给出每条的坐标/路由建议），直到 `ok: true`
    - 绝不跳过验证直接渲染——验证门正是"线不乱"的保证
-3. **渲染并嵌入**：`node archify/bin/archify.mjs render architecture <input.json> <output.html>`
+3. **渲染并嵌入**：`node <插件目录>/archify/bin/archify.mjs render architecture <input.json> <output.html>`
    - 从输出 HTML 提取内联 `<svg>`，**内嵌进 design.md**（放图标题下方）
    - HTML 文件路径记入设计文档（读者可打开交互式查看）
 4. **归档 JSON IR**：`.workflow/designs/<NNN>-<中文名>.architecture.json`（源文件可再编辑/A-B 对比）
