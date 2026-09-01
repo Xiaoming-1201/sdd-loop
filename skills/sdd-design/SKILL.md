@@ -38,7 +38,18 @@ Use `templates/design.md`（10 章完整模板）作为**唯一模板**，按其
 
 ### 图的生成规范（强制）——唯一标准：`templates/design.md`「图的生成规范」
 
-> 生成任何 Mermaid 图前，先读 `templates/design.md` 的「图的生成规范」，本节为执行摘要，冲突时以模板为准。
+> 生成任何图前，先读 `templates/design.md` 的「图的生成规范」，本节为执行摘要，冲突时以模板为准。
+> **两轨制**：复杂架构图用 **Archify**（插件内置 `archify/`，验证门保证可读性）；简单图/时序/ER/状态图用 **Mermaid**。判定：多模块/多域/节点多/易线乱 → Archify；单层、≤12 节点 → Mermaid。
+
+**轨道 A：Archify（复杂架构图首选）**
+
+1. 产出 Archify JSON IR（`architecture` 类型）：components 手排 `pos`/`size`、boundaries 分域、connections 标 `fromSide`/`toSide`/`variant`/`label`。schema 见 `archify/schemas/`，参考 `archify/examples/`。主节点 ≤ 12。
+2. **过验证门（必做）**：`node archify/bin/archify.mjs validate architecture <input.json> --json`；`ok: false` → 按诊断修复到 `ok: true`。绝不跳过验证直接渲染。
+3. **渲染并嵌入**：`node archify/bin/archify.mjs render architecture <input.json> <output.html>`，从 HTML 提取内联 `<svg>` 内嵌进 design.md，HTML 路径记入文档。
+4. **归档**：`.workflow/designs/<NNN>-<中文名>.architecture.json`。
+
+**轨道 B：Mermaid（简单图/时序/ER/状态图）**
+
 > 背景：OpenCode 预览**不支持 ELK 布局**（`flowchart-elk` / `layout: elk` 会静默回退 dagre），因此**禁用 ELK**，只靠 dagre 约束缓解 + 统一 init 配置。
 
 1. **方向单一**：全图统一 `flowchart TD` 或 `flowchart LR` 之一，不得混用方向；决策/时序型内容改用 `sequenceDiagram`。
