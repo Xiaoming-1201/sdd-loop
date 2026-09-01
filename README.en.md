@@ -224,3 +224,7 @@ Generates `dist/sdd-loop-<version>-<stamp>.zip` (includes node_modules and INSTA
 - Built-in skills ship with the plugin version — no external dependency drift
 - Scenario flow definitions live under `prompts/scenarios/` and are customizable
 - After major changes, run the `examples/` regression baseline to verify
+
+## Version history
+
+See [CHANGELOG.md](CHANGELOG.md) for per-version changes (shipped with the package).

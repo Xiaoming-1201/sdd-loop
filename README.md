@@ -228,3 +228,7 @@ powershell -ExecutionPolicy Bypass -File "D:\path\to\sdd-loop\pack.ps1"
 - 内置 skills 随插件版本更新，无外部依赖漂移问题
 - 场景流程定义在 `prompts/scenarios/` 下，可按需定制
 - 大改动后跑 `examples/` 回归基线验证
+
+## 版本历史
+
+每个版本改动见 [CHANGELOG.md](CHANGELOG.md)（随包发布）。
