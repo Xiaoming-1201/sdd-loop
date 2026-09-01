@@ -604,6 +604,24 @@ function createPhaseReminderHook() {
 // Plugin
 // ---------------------------------------------------------------------------
 
+// Exported pure/param-driven functions for unit testing (node:test, no deps).
+// These are the deterministic helpers used throughout the plugin; keeping them
+// exported does not change behavior or the default plugin export below.
+export {
+  deepMerge,
+  configCandidates,
+  loadConfig,
+  buildFallbackChains,
+  parseModelRef,
+  isFallbackError,
+  resolvePreset,
+  getAgentModel,
+  getAgentVariant,
+  getAgentDisplayName,
+  parseStatusFile,
+  validateStatusFile,
+};
+
 export const id = PLUGIN_NAME;
 
 export default {
