@@ -1,4 +1,4 @@
----
+﻿---
 name: sdd-onboard
 description: First-time onboarding into an existing (legacy) project with no .workflow/ docs — scout the architecture, build the capability map, seed the glossary, and route the current request. Run once when the project has no .workflow/ or an empty `.workflow/specs/`.
 ---
@@ -68,7 +68,7 @@ Delegate to @scout to map the existing codebase:
 
 ### 2. Build the capability map
 
-Identify the project's **capability domains** — user-perceivable functional areas (each will map 1:1 to a spec). Write `.workflow/capability-map.md` following `templates/capability-map.md`:
+Identify the project's **capability domains** — user-perceivable functional areas (each will map 1:1 to a spec). Write `.workflow/capability-map.md` following `<PLUGIN_ROOT>/templates/capability-map.md`:
 
 | 能力域 | 核心代码区域 | 关联 spec | 关联 design | 状态 |
 

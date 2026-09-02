@@ -5,6 +5,23 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-03
+
+### Added
+
+- **飞书远程确认**（可选功能）：question 门禁超时未回复 → 自动写入 `.workflow/pending-confirms/` 队列 → `scripts/feishu-daemon.mjs` 发送飞书交互卡片（动态选项/确认-拒绝/自定义输入框）→ 手机端确认 → 结果回注 opencode，流程从断点继续。
+- **daemon 自动启动**：插件加载时自动 fork 后台 daemon（PID 锁防重复，凭据经 CLI 参数传入），无需手动启动守护进程。
+- **grilling 纯文本超时兜底**：任一 grilling/纯文本确认末尾统一输出 `⏳ 等待确认中…` 标记，插件检测到后启动超时 → 飞书通知。
+- **批次合并喂回**：同一 `question.asked` 的多个问题（共用 requestId）分别发多张卡片，全部回复后合并 `[[answer1],[answer2]]` 一次喂回。
+- **模板绝对路径**：agent prompt 注入插件目录绝对路径，skill 中模板引用统一为 `<PLUGIN_ROOT>/templates/...`，修复设计文档模板加载失败的问题。
+
+### Changed
+
+- `callQuestionReply` answers 改为服务端 schema 要求的二维数组 `[[answer]]`。
+- 降级场景（`degraded-<sessionID>`）喂回走 `callDegradedInject`（注入用户消息），不再尝试 question reply。
+- 卡片 ACK 响应按 lark_oapi `P2CardActionTriggerResponse` 规范返回 `data.toast` + `data.card`。
+- daemon 事件去重 `seenEventIds` 改 Map 带时间戳，定期清理防内存泄漏。
+
 ## [1.1.10] - 2026-09-01
 
 ### Added

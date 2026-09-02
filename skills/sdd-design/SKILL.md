@@ -1,4 +1,4 @@
----
+﻿---
 name: sdd-design
 description: Produce a technical design document from an approved spec — architecture, interfaces, data model, tech choices, key flows, risks. Use after sdd-spec, before sdd-tickets, in scenarios 1 and 2.
 ---
@@ -16,9 +16,9 @@ Turn an approved spec into a **technical design document** — the "how" that th
 
 ## Design document template
 
-Use `templates/design.md`（10 章完整模板）作为**唯一模板**，按其中章节结构输出到 `.workflow/designs/<NNN>-<中文名>.md`——**必须与对应 spec 同名**（同 NNN + 同中文名，靠 designs/ 目录区分），如 spec `001-用户登录.md` → design `001-用户登录.md`。
+Use `<PLUGIN_ROOT>/templates/design.md`（10 章完整模板）作为**唯一模板**，按其中章节结构输出到 `.workflow/designs/<NNN>-<中文名>.md`——**必须与对应 spec 同名**（同 NNN + 同中文名，靠 designs/ 目录区分），如 spec `001-用户登录.md` → design `001-用户登录.md`。
 
-> 本 skill 不再内嵌简版模板——`templates/design.md` 是唯一事实来源，避免模板漂移。模板章节如有不适用项，显式声明"不适用"，不得留空。
+> 本 skill 不再内嵌简版模板——`<PLUGIN_ROOT>/templates/design.md` 是唯一事实来源，避免模板漂移。模板章节如有不适用项，显式声明"不适用"，不得留空。
 
 ## Diagram rules (Mermaid)
 
@@ -36,9 +36,9 @@ Use `templates/design.md`（10 章完整模板）作为**唯一模板**，按其
 4. **Renders**: Mermaid syntax valid (nodes closed, relations directed, code fences closed).
 5. **Consistent style**: use the standard styling below across the whole document.
 
-### 图的生成规范（强制）——唯一标准：`templates/design.md`「图的生成规范」
+### 图的生成规范（强制）——唯一标准：`<PLUGIN_ROOT>/templates/design.md`「图的生成规范」
 
-> 生成任何图前，先读 `templates/design.md` 的「图的生成规范」，本节为执行摘要，冲突时以模板为准。
+> 生成任何图前，先读 `<PLUGIN_ROOT>/templates/design.md` 的「图的生成规范」，本节为执行摘要，冲突时以模板为准。
 > **两轨制**：复杂架构图用 **Archify**（插件内置 `archify/`，验证门保证可读性）；简单图/时序/ER/状态图用 **Mermaid**。判定：多模块/多域/节点多/易线乱 → Archify；单层、≤12 节点 → Mermaid。
 
 **轨道 A：Archify（复杂架构图首选）**

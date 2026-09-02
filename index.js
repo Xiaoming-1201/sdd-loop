@@ -2,9 +2,11 @@
 // Self-contained SDD workflow plugin: registers its own agents and applies
 // model presets from sdd-loop.json via the config hook.
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, appendFileSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { fork } from "node:child_process";
 import { homedir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { tool } from "@opencode-ai/plugin";
 
@@ -601,9 +603,459 @@ function createPhaseReminderHook() {
 }
 
 // ---------------------------------------------------------------------------
-// Plugin
+// P4: Gate timeout — question 工具（确认门禁）弹出后 N 分钟未回复，把待确认项写入
+// .workflow/pending-confirms/（飞书守护进程 scripts/feishu-daemon.mjs 轮询该目录并
+// 发送确认卡片）。事件类型/schema 按 @opencode-ai/sdk 的 question 事件定义：
+//   question.asked     properties: { id, sessionID, questions: [{question, header, options}] }
+//   question.replied   properties: { sessionID, requestID, answers }
+//   question.rejected  properties: { sessionID, requestID }
+// replied/rejected 通过 requestID（= asked 的 properties.id）关联取消定时器。
+// 不配置 feishu / enabled=false / gateTimeoutMinutes<=0 → 返回空 hook，零行为影响。
 // ---------------------------------------------------------------------------
 
+function createQuestionTimeoutHook(directory, config, client) {
+  const feishuCfg = config?.feishu;
+  const timeoutMinutes = feishuCfg?.gateTimeoutMinutes;
+  const enabled =
+    Boolean(feishuCfg) && feishuCfg.enabled !== false && typeof timeoutMinutes === "number" && timeoutMinutes > 0;
+  if (!enabled) return {};
+
+  const timeoutMs = timeoutMinutes * 60 * 1000;
+  const pendingDir = join(directory, ".workflow", "pending-confirms");
+  const requestTimers = new Map(); // requestId -> Array<setTimeout handle>
+  const consumedSet = new Set(); // 已成功喂回 opencode 的 fileId（防重复喂回）
+  const requestCounts = new Map(); // requestId -> 该批问题数（armTimeout 时记录，批次合并用）
+  const waitingSet = new Set(); // 已 answered 但等待同批其他项的 fileId
+  const fedBackRequestIds = new Set(); // 已完成批次喂回的 requestId
+
+  // gate 日志写文件（避免 console.error 被宿主回显到 opencode UI，与 diag 同理）
+  const gateLogPath = join(pendingDir, "gate.log");
+  function gateLog(msg) {
+    try {
+      mkdirSync(pendingDir, { recursive: true });
+      appendFileSync(gateLogPath, `[${new Date().toISOString()}] ${msg}\n`, "utf8");
+    } catch {}
+  }
+
+  function writePendingConfirm(question, options, requestId, inputOnly, sessionID) {
+    mkdirSync(pendingDir, { recursive: true });
+    const id = randomUUID();
+    const item = {
+      id,
+      createdAt: new Date().toISOString(),
+      source: "gate:question-timeout",
+      requestId: requestId || null,
+      sessionID: sessionID || null, // 关联会话 ID，喂回失败时降级注入用
+      question: typeof question === "string" && question.trim() ? question.trim() : "需要确认",
+      options:
+        inputOnly
+          ? []
+          : Array.isArray(options) && options.length > 0
+            ? options.map((o) => (typeof o === "string" ? o : o?.label ?? o?.question ?? "确认"))
+            : ["确认", "拒绝"],
+      inputOnly: !!inputOnly,
+      status: "pending",
+      answer: null,
+      feishuMessageId: null,
+      answeredAt: null,
+      operatorOpenId: null,
+    };
+    const filePath = join(pendingDir, `${id}.json`);
+    writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8");
+    gateLog(`[${PLUGIN_NAME}][gate] 超时未回复，已写入待确认队列: ${filePath}`);
+    return { id, filePath };
+  }
+
+  function armTimeout(requestId, questions, sessionID) {
+    const list = (Array.isArray(questions) ? questions : []).filter((q) => q && typeof q === "object");
+    // 无结构化 questions 时兜底写一条（防御性：事件字段缺失）
+    const items = list.length > 0 ? list : [{ question: "", options: ["确认", "拒绝"] }];
+    // 记录该批问题数，用于批次合并喂回（多个问题共用一个 requestId）
+    requestCounts.set(requestId, Math.max(requestCounts.get(requestId) ?? 0, items.length));
+    const timers = items.map((q) => {
+      const questionText =
+        (typeof q.question === "string" && q.question.trim() && q.question) ||
+        (typeof q.header === "string" && q.header.trim() && q.header) ||
+        "需要确认";
+      const qOptions = Array.isArray(q.options) ? q.options : undefined;
+      const timer = setTimeout(() => {
+        try {
+          writePendingConfirm(questionText, qOptions, requestId, false, sessionID);
+        } catch (e) {
+          gateLog(`[${PLUGIN_NAME}][gate] 写入待确认队列失败: ${e.message}`);
+        }
+      }, timeoutMs);
+      return timer;
+    });
+    const prev = requestTimers.get(requestId) ?? [];
+    requestTimers.set(requestId, [...prev, ...timers]);
+    console.error(
+      `[${PLUGIN_NAME}][gate] 门禁问题已设超时 ${timeoutMinutes} 分钟（requestId=${requestId}，${timers.length} 项）`
+    );
+  }
+
+  function clearTimers(requestId) {
+    const timers = requestTimers.get(requestId) ?? [];
+    for (const t of timers) clearTimeout(t);
+    requestTimers.delete(requestId);
+    if (timers.length > 0) {
+      gateLog(`[${PLUGIN_NAME}][gate] 问题已回复/取消，清除超时定时器（requestId=${requestId}，${timers.length} 项）`);
+    }
+  }
+
+  /** 尝试将飞书确认结果喂回 opencode question（进程内调用 SDK） */
+  async function feedBackToOpencode(item, filePath, action) {
+    const requestId = item.requestId;
+    if (!requestId) {
+      gateLog(`[${PLUGIN_NAME}][gate] 文件无 requestId，无法喂回（confirmId=${item.id}）`);
+      return false;
+    }
+
+    try {
+      if (action === "answered") {
+        const answer = item.answer || "确认";
+        if (requestId.startsWith("degraded-")) {
+          // 降级路径：无 question，注入用户消息到会话
+          const sessionID = requestId.slice("degraded-".length);
+          if (!sessionID) throw new Error("降级 requestId 无法提取 sessionID");
+          await callDegradedInject(sessionID, answer);
+          gateLog(`[${PLUGIN_NAME}][gate] 降级确认已注入用户消息: ${answer}（session=${sessionID}）`);
+        } else {
+          await callQuestionReply(requestId, answer);
+          gateLog(`[${PLUGIN_NAME}][gate] 飞书确认已喂回 opencode question: ${answer}`);
+        }
+      } else {
+        // 拒绝：降级路径无 question 可 reject，仅日志
+        if (requestId.startsWith("degraded-")) {
+          gateLog(`[${PLUGIN_NAME}][gate] 降级拒绝已收到（confirmId=${item.id}，无 question 可 reject）`);
+        } else {
+          await callQuestionReject(requestId);
+          gateLog(`[${PLUGIN_NAME}][gate] 飞书拒绝已喂回 opencode question`);
+        }
+      }
+      consumedSet.add(item.id);
+      item.status = "consumed";
+      try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch { /* 非关键 */ }
+      return true;
+    } catch (e) {
+      // 失败：还原为原始状态（answered/rejected），允许后续轮询重试
+      item.status = action;
+      try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch { /* 非关键 */ }
+      gateLog(`[${PLUGIN_NAME}][gate] 喂回失败（${e.message}），已还原为 ${action}，等待重试`);
+      return false;
+    }
+  }
+
+  /** 格式化 error 为字符串（防御性） */
+  function fmtErr(err) {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "string") return err;
+    try { return JSON.stringify(err); } catch { return String(err); }
+  }
+
+  /** 通过 v1 client 底层 transport 调 /question/{requestID}/reply */
+  async function callQuestionReply(requestId, answer) {
+    // answer 可以是单字符串（如 "确认"，自动包装为 [[answer]]）
+    // 或是二维数组（如 [["确认"], ["同意"]], 批次合并时直接传入）
+    const answers = Array.isArray(answer) ? answer : [[answer]];
+    // 优先尝试 v2 client.question API（若 SDK 版本支持）
+    const qApi = client?.question;
+    if (qApi && typeof qApi.reply === "function") {
+      await qApi.reply({ requestID: requestId, directory, answers });
+      return;
+    }
+    // 回退：v1 client 的 _client 是已连到 opencode 服务器的 Hey API 底层 transport
+    // 直接调 POST /question/{requestID}/reply（v2 端点，服务端已验证支持）
+    const transport = client?._client;
+    if (!transport || typeof transport.post !== "function") {
+      throw new Error("当前 SDK 客户端无 question 回复能力（无 client.question 且无底层 transport）");
+    }
+    const result = await transport.post({
+      url: "/question/{requestID}/reply",
+      path: { requestID: requestId },
+      query: { directory },
+      body: { answers }, // 服务端 schema 要求二维数组 [[answer]]
+    });
+    if (result.error) {
+      throw new Error(fmtErr(result.error));
+    }
+  }
+
+  /** 降级场景：通过 transport 注入用户消息到会话（无 question 时使用） */
+  async function callDegradedInject(sessionID, answer) {
+    const transport = client?._client;
+    if (!transport || typeof transport.post !== "function") {
+      throw new Error("SDK 客户端无消息注入能力（无底层 transport）");
+    }
+    const result = await transport.post({
+      url: "/session/{id}/message",
+      path: { id: sessionID },
+      query: { directory },
+      body: { parts: [{ type: "text", text: `[远程确认] ${answer}` }] },
+    });
+    if (result.error) {
+      throw new Error(fmtErr(result.error));
+    }
+  }
+
+  /** 通过 v1 client 底层 transport 调 /question/{requestID}/reject */
+  async function callQuestionReject(requestId) {
+    const qApi = client?.question;
+    if (qApi && typeof qApi.reject === "function") {
+      await qApi.reject({ requestID: requestId, directory });
+      return;
+    }
+    const transport = client?._client;
+    if (!transport || typeof transport.post !== "function") {
+      throw new Error("当前 SDK 客户端无 question 拒绝能力（无 client.question 且无底层 transport）");
+    }
+    const result = await transport.post({
+      url: "/question/{requestID}/reject",
+      path: { requestID: requestId },
+      query: { directory },
+    });
+    if (result.error) {
+      throw new Error(fmtErr(result.error));
+    }
+  }
+
+  // 观察 pending 文件被 daemon 改成 answered/rejected 后：
+  // 1. 优先通过 client 底层 transport 调 /question/{requestID}/reply 喂回
+  // 2. 无 transport 时退化到只打印日志
+  const observer = setInterval(async () => {
+    try {
+      if (!existsSync(pendingDir)) return;
+      for (const name of readdirSync(pendingDir)) {
+        if (!name.endsWith(".json")) continue;
+        const filePath = join(pendingDir, name);
+        let item;
+        try {
+          item = JSON.parse(readFileSync(filePath, "utf8"));
+        } catch {
+          continue;
+        }
+        if (!item?.id) continue;
+        // 已消费过或等待中，跳过
+        if (consumedSet.has(item.id) || waitingSet.has(item.id)) continue;
+        // 只关心 answered/rejected
+        if (item.status !== "answered" && item.status !== "rejected") continue;
+        // 该 requestId 已完成批次喂回，跳过
+        if (item.requestId && fedBackRequestIds.has(item.requestId)) continue;
+
+        // 尝试喂回（异步，不阻塞轮询）
+        if (item.requestId) {
+          if (item.requestId.startsWith("degraded-") || item.inputOnly) {
+            // 降级/纯输入路径：单文件独立处理
+            const action = item.status;
+            item.status = "processing";
+            try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch { /* 非关键 */ }
+            gateLog(`[${PLUGIN_NAME}][gate] 开始喂回 confirmId=${item.id} action=${action}（降级注入）`);
+            feedBackToOpencode(item, filePath, action).catch((e) => {
+              gateLog(`[${PLUGIN_NAME}][gate] 喂回异常: ${e.message}`);
+            });
+          } else {
+            // 正常 question 门禁：批次合并，等同一 requestId 全部完成再喂回
+            // 扫描同批文件
+            const siblings = readdirSync(pendingDir)
+              .filter(n => n.endsWith(".json"))
+              .map(n => {
+                try { return { ...JSON.parse(readFileSync(join(pendingDir, n), "utf8")), _file: join(pendingDir, n) }; } catch { return null; }
+              })
+              .filter(f => f && f.requestId === item.requestId);
+
+            const doneItems = siblings.filter(f => f.status === "answered" || f.status === "rejected");
+            const expected = requestCounts.get(item.requestId) ?? siblings.length;
+
+            if (doneItems.length >= expected) {
+              // 全部完成 → 批次喂回一次
+              if (fedBackRequestIds.has(item.requestId)) continue;
+              fedBackRequestIds.add(item.requestId);
+
+              // 按 createdAt 排序，保证 answers 顺序稳定
+              doneItems.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+              const hasReject = doneItems.some(f => f.status === "rejected");
+
+              // 逐文件标记 processing（防并发）
+              for (const f of doneItems) {
+                f.status = "processing";
+                try { writeFileSync(f._file, JSON.stringify(f, null, 2), "utf8"); } catch {}
+              }
+
+              if (hasReject) {
+                const rejectId = doneItems.find(f => f.status === "rejected")?.id || item.id;
+                await callQuestionReject(item.requestId).catch(e => {
+                  gateLog(`[${PLUGIN_NAME}][gate] 批次 reject 失败: ${e.message}，已标记 consumed`);
+                });
+                gateLog(`[${PLUGIN_NAME}][gate] 批次拒绝：${doneItems.length} 项全部 reject（第一项 confirmId=${rejectId}）`);
+              } else {
+                // 收集所有答案，二维数组 [[answer1], [answer2], ...]
+                const allAnswers = doneItems.map(f => [f.answer || "确认"]);
+                await callQuestionReply(item.requestId, allAnswers).catch(e => {
+                  gateLog(`[${PLUGIN_NAME}][gate] 批次喂回失败: ${e.message}，已标记 consumed`);
+                });
+                gateLog(`[${PLUGIN_NAME}][gate] 批次喂回：${doneItems.length} 项答案合并（requestId=${item.requestId}）`);
+              }
+
+              // 全部标记 consumed
+              for (const f of doneItems) {
+                consumedSet.add(f.id);
+                f.status = "consumed";
+                try { writeFileSync(f._file, JSON.stringify(f, null, 2), "utf8"); } catch {}
+              }
+            } else {
+              // 部分完成 → 标记 waiting，等同类其他项
+              waitingSet.add(item.id);
+              item.status = "waiting";
+              try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch {}
+              gateLog(`[${PLUGIN_NAME}][gate] 批次等待：${doneItems.length}/${expected}（confirmId=${item.id}，等同类其他项）`);
+            }
+          }
+        } else {
+          // 旧版文件无 requestId → 只打印日志一次，加入 consumedSet 防重复
+          gateLog(`[${PLUGIN_NAME}][gate] 飞书确认已收到: ${item.answer ?? item.status}（confirmId=${item.id}，无 requestId，无法喂回）`);
+          consumedSet.add(item.id);
+        }
+      }
+    } catch (e) {
+      gateLog(`[${PLUGIN_NAME}][gate] resolve 观察失败: ${e.message}`);
+    }
+  }, 10000);
+  if (typeof observer.unref === "function") observer.unref();
+
+  return {
+    event: async ({ event }) => {
+      if (!event?.type) return;
+      const props = event.properties ?? {};
+      if (event.type === "question.asked" || event.type === "question.v2.asked") {
+        const requestId = props.id || props.requestID || `q-${Date.now()}`;
+        armTimeout(requestId, props.questions, props.sessionID);
+      } else if (
+        event.type === "question.replied" ||
+        event.type === "question.rejected" ||
+        event.type === "question.v2.replied" ||
+        event.type === "question.v2.rejected"
+      ) {
+        const requestId = props.requestID || props.id;
+        if (requestId) clearTimers(requestId);
+      } else if (event.type === "message.part.updated") {
+        // 降级/纯文本问答检测：agent 输出纯文本问题时，通过 part.text 检测等待标记
+        // 注：message.updated 事件只携带 Message 元数据（无文本内容），
+        // 文本内容在 message.part.updated 的 part.text 中
+        const part = props.part;
+        if (!part || part.type !== "text") return;
+        const text = part.text;
+        if (!text) return;
+        const sessionID = part.sessionID;
+        if (!sessionID) return;
+        // 检测标记：① question 工具降级为纯文本时的固定纪律文本
+        // ② grilling 等纯文本问答 skill 输出的等待标记
+        // ③ grilling 格式特征（❓ Q\d 模式，不依赖 agent 严格遵守标记）
+        const DEGRADE_MARKERS = [
+          "降级处理",
+          "请从输入框回复",
+          "纯文本列出决策点",
+          "当前环境无 question 工具",
+          "⏳ 请在回复中继续",
+          "⏳ 等待确认中…", // 统一确认等待标记（grilling/spec门禁/设计确认等所有等待回复场景）
+        ];
+        const isGrillingFormat = /❓\s*Q\d/.test(text);
+        if (!isGrillingFormat && !DEGRADE_MARKERS.some((m) => text.includes(m))) return;
+        const requestId = `degraded-${sessionID}`;
+        // 已为同一会话启动过降级定时器则跳过（防重复）
+        if (requestTimers.has(requestId)) return;
+        gateLog(`[${PLUGIN_NAME}][gate] 检测到纯文本问答等待标记（session=${sessionID}），启动超时 ${timeoutMinutes} 分钟`);
+        const timer = setTimeout(() => {
+          try {
+            // 降级场景：无 question requestID，写 pending 时 requestId 用标记值，
+            // feedBack 走「注入用户消息」路径（见 feedBackToOpencode）
+            // 纯输入模式（inputOnly=true）：卡片只显示问题 + 输入框，无选项按钮
+            writePendingConfirm(text.slice(0, 3000), null, requestId, true);
+          } catch (e) {
+            gateLog(`[${PLUGIN_NAME}][gate] 降级写队列失败: ${e.message}`);
+          }
+        }, timeoutMs);
+        requestTimers.set(requestId, [timer]);
+      }
+    },
+    dispose: async () => {
+      for (const timers of requestTimers.values()) for (const t of timers) clearTimeout(t);
+      requestTimers.clear();
+      clearInterval(observer);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Plugin
+// ---------------------------------------------------------------------------
+// 飞书守护进程自动启动
+// ---------------------------------------------------------------------------
+
+/** 插件加载时自动启动飞书守护进程（后台，detached 子进程）。
+ *  PID 文件按项目目录隔离（.workflow/pending-confirms/.daemon.pid），
+ *  不同项目各自独立守护进程，防重复启动。
+ *  凭据通过环境变量传给子进程（不依赖配置文件路径）。
+ */
+function maybeStartFeishuDaemon(config, projectDir) {
+  const feishuCfg = config?.feishu;
+  if (!feishuCfg || feishuCfg.enabled === false) return;
+  const timeoutMinutes = feishuCfg.gateTimeoutMinutes;
+  if (typeof timeoutMinutes !== "number" || timeoutMinutes <= 0) return;
+  if (!feishuCfg.appId || !feishuCfg.appSecret || !feishuCfg.receiverOpenId) {
+    console.error(`[${PLUGIN_NAME}] feishu 配置不完整，跳过 daemon 自动启动`);
+    return;
+  }
+
+  const daemonScript = join(__dirname, "scripts", "feishu-daemon.mjs");
+  if (!existsSync(daemonScript)) {
+    console.error(`[${PLUGIN_NAME}] daemon 脚本不存在: ${daemonScript}`);
+    return;
+  }
+
+  const pendingDir = join(projectDir, ".workflow", "pending-confirms");
+  const pidFile = join(pendingDir, ".daemon.pid");
+
+  // 检查是否已有 daemon 在跑（PID 文件 + 进程存活检查）
+  try {
+    if (existsSync(pidFile)) {
+      const oldPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+      if (oldPid > 0) {
+        try {
+          // process.kill(pid, 0) 检查进程是否存在，不发送信号
+          process.kill(oldPid, 0);
+          console.error(`[${PLUGIN_NAME}] daemon 已在运行（PID ${oldPid}），跳过`);
+          return;
+        } catch {
+          // 进程已死，继续启动新 daemon
+          console.error(`[${PLUGIN_NAME}] daemon 旧进程（PID ${oldPid}）已退出，重新启动`);
+        }
+      }
+    }
+  } catch {}
+
+  // 确保目录存在
+  try { mkdirSync(pendingDir, { recursive: true }); } catch {}
+
+  // 使用 fork 启动 Node.js 子进程（自动处理可执行路径，优于 spawn）
+  const child = fork(daemonScript, [
+    "--app-id", feishuCfg.appId,
+    "--app-secret", feishuCfg.appSecret,
+    "--open-id", feishuCfg.receiverOpenId,
+    "--project", projectDir,
+  ], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref(); // 父进程（opencode）退出不影响子进程
+
+  // 写 PID 文件
+  try { writeFileSync(pidFile, String(child.pid), "utf8"); } catch {}
+
+  console.error(`[${PLUGIN_NAME}] daemon 自动启动成功（PID ${child.pid}，项目: ${projectDir}）`);
+}
+
+// ---------------------------------------------------------------------------
 // Exported pure/param-driven functions for unit testing (node:test, no deps).
 // These are the deterministic helpers used throughout the plugin; keeping them
 // exported does not change behavior or the default plugin export below.
@@ -637,6 +1089,9 @@ export default {
     const agents = {};
     for (const def of AGENT_DEFS) {
       let prompt = loadPrompt(def.promptFile);
+      // 注入插件目录绝对路径，供 agent 加载模板/archify 等文件时拼绝对路径
+      // skill 中引用模板文件应使用 <PLUGIN_ROOT>/templates/design.md 等格式
+      prompt += `\n\n---\n插件目录绝对路径：${__dirname}\n`;
       // The orchestrator (sdd-loop) gets the full scenario definitions
       // injected at load time so it never depends on runtime file paths.
       if (def.name === "sdd-loop" && scenarioDefs) {
@@ -713,6 +1168,22 @@ export default {
       registerHooks(createPhaseReminderHook());
     } catch (e) {
       console.error(`[${PLUGIN_NAME}] failed to init phase-reminder: ${e.message}`);
+    }
+    try {
+      // 门禁超时检测：question 工具弹出后 N 分钟未回复 → 写入 pending-confirms 队列
+      // 不配置 feishu / enabled=false → 返回空 hook，不注册任何事件处理
+      // client 用于喂回：检测到 pending 文件被 daemon resolve 后进程内调 question reply
+      registerHooks(
+        createQuestionTimeoutHook(input.directory ?? process.cwd(), loadConfig().config, input.client)
+      );
+    } catch (e) {
+      console.error(`[${PLUGIN_NAME}] failed to init question-timeout: ${e.message}`);
+    }
+    try {
+      // 插件加载时自动启动飞书守护进程（项目级目录隔离，PID 文件防重复）
+      maybeStartFeishuDaemon(loadConfig().config, input.directory ?? process.cwd());
+    } catch (e) {
+      console.error(`[${PLUGIN_NAME}] daemon 自动启动失败: ${e.message}`);
     }
 
     return {

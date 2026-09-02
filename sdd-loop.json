@@ -22,5 +22,12 @@
       "reviewer": { "model": "volcengine-plan/glm-5.2", "variant": "high" },
       "ui-designer": { "model": "volcengine-plan/doubao-seed-2.0-pro", "variant": "medium" }
     }
+  },
+  "feishu": {
+    "appId": "cli_xxx",
+    "appSecret": "xxx",
+    "receiverOpenId": "ou_xxx",
+    "gateTimeoutMinutes": 2,
+    "enabled": false
   }
 }
