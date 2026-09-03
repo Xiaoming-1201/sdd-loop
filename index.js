@@ -936,7 +936,29 @@ function createQuestionTimeoutHook(directory, config, client) {
         event.type === "question.v2.rejected"
       ) {
         const requestId = props.requestID || props.id;
-        if (requestId) clearTimers(requestId);
+        if (requestId) {
+          clearTimers(requestId);
+          // question 已在 opencode 侧被消费（用户直接回复）：
+          // 清掉该 requestId 残留的 pending/sent 文件，防止 later 的飞书回复再被尝试喂回
+          try {
+            if (existsSync(pendingDir)) {
+              for (const name of readdirSync(pendingDir)) {
+                if (!name.endsWith(".json")) continue;
+                const fp = join(pendingDir, name);
+                let f;
+                try { f = JSON.parse(readFileSync(fp, "utf8")); } catch { continue; }
+                if (!f?.requestId || f.requestId !== requestId) continue;
+                if (consumedSet.has(f.id)) continue;
+                // 原状态 answered/rejected 的飞书回复不可信（question 已消费），标记 expired
+                f.status = "expired";
+                try { writeFileSync(fp, JSON.stringify(f, null, 2), "utf8"); } catch {}
+                gateLog(`[${PLUGIN_NAME}][gate] question 已在 opencode 消费，残留确认文件标记 expired（requestId=${requestId} confirmId=${f.id}）`);
+              }
+            }
+          } catch (e) {
+            gateLog(`[${PLUGIN_NAME}][gate] 残留确认文件清理失败: ${e.message}`);
+          }
+        }
       } else if (event.type === "message.part.updated") {
         // 降级/纯文本问答检测：agent 输出纯文本问题时，通过 part.text 检测等待标记
         // 注：message.updated 事件只携带 Message 元数据（无文本内容），
@@ -991,25 +1013,26 @@ function createQuestionTimeoutHook(directory, config, client) {
 // 飞书守护进程自动启动
 // ---------------------------------------------------------------------------
 
-/** 插件加载时自动启动飞书守护进程（后台，detached 子进程）。
+/** 插件加载时自动启动飞书守护进程（后台，fork 子进程）。
  *  PID 文件按项目目录隔离（.workflow/pending-confirms/.daemon.pid），
  *  不同项目各自独立守护进程，防重复启动。
- *  凭据通过环境变量传给子进程（不依赖配置文件路径）。
+ *  凭据通过 CLI 参数传入。
+ *  @returns {ChildProcess|null} 子进程引用（用于 dispose 时 kill）
  */
 function maybeStartFeishuDaemon(config, projectDir) {
   const feishuCfg = config?.feishu;
-  if (!feishuCfg || feishuCfg.enabled === false) return;
+  if (!feishuCfg || feishuCfg.enabled === false) return null;
   const timeoutMinutes = feishuCfg.gateTimeoutMinutes;
-  if (typeof timeoutMinutes !== "number" || timeoutMinutes <= 0) return;
+  if (typeof timeoutMinutes !== "number" || timeoutMinutes <= 0) return null;
   if (!feishuCfg.appId || !feishuCfg.appSecret || !feishuCfg.receiverOpenId) {
     console.error(`[${PLUGIN_NAME}] feishu 配置不完整，跳过 daemon 自动启动`);
-    return;
+    return null;
   }
 
   const daemonScript = join(__dirname, "scripts", "feishu-daemon.mjs");
   if (!existsSync(daemonScript)) {
     console.error(`[${PLUGIN_NAME}] daemon 脚本不存在: ${daemonScript}`);
-    return;
+    return null;
   }
 
   const pendingDir = join(projectDir, ".workflow", "pending-confirms");
@@ -1024,7 +1047,7 @@ function maybeStartFeishuDaemon(config, projectDir) {
           // process.kill(pid, 0) 检查进程是否存在，不发送信号
           process.kill(oldPid, 0);
           console.error(`[${PLUGIN_NAME}] daemon 已在运行（PID ${oldPid}），跳过`);
-          return;
+          return null;
         } catch {
           // 进程已死，继续启动新 daemon
           console.error(`[${PLUGIN_NAME}] daemon 旧进程（PID ${oldPid}）已退出，重新启动`);
@@ -1036,23 +1059,23 @@ function maybeStartFeishuDaemon(config, projectDir) {
   // 确保目录存在
   try { mkdirSync(pendingDir, { recursive: true }); } catch {}
 
-  // 使用 fork 启动 Node.js 子进程（自动处理可执行路径，优于 spawn）
+  // 使用 fork 启动 Node.js 子进程
   const child = fork(daemonScript, [
     "--app-id", feishuCfg.appId,
     "--app-secret", feishuCfg.appSecret,
     "--open-id", feishuCfg.receiverOpenId,
     "--project", projectDir,
   ], {
-    detached: true,
     stdio: "ignore",
     windowsHide: true,
   });
-  child.unref(); // 父进程（opencode）退出不影响子进程
+  child.unref();
 
   // 写 PID 文件
   try { writeFileSync(pidFile, String(child.pid), "utf8"); } catch {}
 
   console.error(`[${PLUGIN_NAME}] daemon 自动启动成功（PID ${child.pid}，项目: ${projectDir}）`);
+  return child;
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,7 +1204,15 @@ export default {
     }
     try {
       // 插件加载时自动启动飞书守护进程（项目级目录隔离，PID 文件防重复）
-      maybeStartFeishuDaemon(loadConfig().config, input.directory ?? process.cwd());
+      // 返回子进程引用，随 opencode 生命周期存活（dispose 时一同退出）
+      const daemonChild = maybeStartFeishuDaemon(loadConfig().config, input.directory ?? process.cwd());
+      if (daemonChild) {
+        const prevDispose = hookGroups.dispose;
+        hookGroups.dispose = async () => {
+          if (prevDispose) { try { await prevDispose(); } catch {} }
+          try { daemonChild.kill(); } catch {}
+        };
+      }
     } catch (e) {
       console.error(`[${PLUGIN_NAME}] daemon 自动启动失败: ${e.message}`);
     }
