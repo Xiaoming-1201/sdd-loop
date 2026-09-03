@@ -5,6 +5,13 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-09-03
+
+### Fixed
+
+- **守护进程跟随 opencode 生命周期**：去掉 `detached`，opencode 关闭时 daemon 随之退出（而不是常驻后台）。
+- **竞态清理**：`question.replied/rejected`（用户直接在 opencode 回复）时，将该 requestId 残留的 pending/sent 确认文件标记 `expired`，防止之后飞书回复被重复喂回或误处理。
+
 ## [1.2.0] - 2026-09-03
 
 ### Added
