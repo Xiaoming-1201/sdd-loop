@@ -173,6 +173,62 @@ Recommended (project-scoped override, e.g. switching models) — create `.openco
 
 Same for user-level: put the file at `~/.config/opencode/sdd-loop.json` to apply it globally.
 
+### Feishu remote confirmation (optional)
+
+sdd-loop supports remote confirmation via Feishu — when a gate question times out, it automatically sends an interactive card to Feishu. Reply on your phone to confirm/reject/type custom answer, and the result feeds back into opencode, continuing the workflow from where it left off.
+
+#### Prerequisites: Create a Feishu app
+
+1. Open [Feishu Open Platform](https://open.feishu.cn) → go to **Developer Console**
+2. Create a **Company Self-Built App** (or use an existing one)
+3. In **Credentials & Basic Info**, get your `App ID` and `App Secret`
+4. In **Permissions**, add:
+   - `im:message` (message read/write)
+   - `im:message.p2p_msg:readonly` (read P2P messages)
+   - `card.action.trigger` (card interaction callback)
+5. In **Events & Callbacks** → **Callback Configuration**, select **Long Connection** subscription, add event `card.action.trigger`
+6. Publish the app (requires admin approval)
+
+> To get the user's Open ID for notifications: have the bot send you a message, then check the message log in the Feishu Open Platform for `open_id`.
+
+#### Configuration
+
+Add to user-level `~/.config/opencode/sdd-loop.json` or project-level config:
+
+```jsonc
+{
+  "feishu": {
+    "appId": "cli_xxxxxxxxxxxxxxxxxxxx",        // Feishu App ID
+    "appSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // Feishu App Secret
+    "receiverOpenId": "ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // Feishu user Open ID to receive notifications
+    "gateTimeoutMinutes": 2,                     // Gate timeout in minutes (default 2)
+    "enabled": true                              // Enable (default false)
+  }
+}
+```
+
+#### How it works
+
+Plugin listens for `question.asked` events → after N minutes without reply → writes to `.workflow/pending-confirms/` → daemon `scripts/feishu-daemon.mjs` auto-starts (spawned by plugin on load) → sends Feishu interactive card (dynamic option buttons + custom input) → reply on phone → result feeds back into opencode.
+
+#### Daemon
+
+Enable feishu in config and the daemon starts automatically (spawned in background, PID lock prevents duplicates, credentials passed via CLI args, logs forwarded to opencode host). The daemon stops when opencode exits.
+
+Also supports manual start:
+
+```bash
+node scripts/feishu-daemon.mjs --config ~/.config/opencode/sdd-loop.json --project <project-dir>
+```
+
+Or via environment variables (CLI args > env vars > config file):
+
+```bash
+FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx FEISHU_OPEN_ID=ou_xxx node scripts/feishu-daemon.mjs --project <project-dir>
+```
+
+
+
 ## Usage
 
 Switch to the sdd-loop agent and just talk, no special commands:

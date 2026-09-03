@@ -5,6 +5,18 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-09-03
+
+### Fixed
+
+- **修复 daemon 自动启动**：fork 改用 spawn + 显式解析真实 node 解释器（resolveNodeExecutable，支持 SDD_NODE_PATH/PATH/常见位置），解决宿主 process.execPath 非 node（opencode.exe / Electron+bun）时 daemon 无法存活；移除父进程写 PID（消除与 daemon 自身 PID 锁的启动竞态）；补充 spawn error 监听与日志转发。
+- **修复飞书回注**：喂回失败（QuestionNotFoundError，宿主多实例路由错实例）时降级注入用户消息到关联会话，避免手机确认被丢弃；去重降级注入双前缀；降级注入后补 reject 关闭宿主 GUI question（多实例路由为宿主层行为，插件侧兜底）。
+- **修复飞书长连接 ACK**：ACK 帧回传原帧 SeqID/LogID（field 1/2）解决目标回调超时；biz_rt 改为事件处理耗时；ACK payload 按官方 code=200 + data base64；卡片回调响应支持仅 Toast（方式二）与 raw 类型更新卡片（方式一）；卡片去除"拒绝"按钮；选择后卡片置灰（disabled + 已选标记）防重复点击。
+
+### Docs
+
+- README（中/英）补充「飞书远程确认」章节：飞书应用创建步骤（权限/事件订阅/长连接）、配置、工作原理、守护进程说明。
+
 ## [1.2.1] - 2026-09-03
 
 ### Fixed

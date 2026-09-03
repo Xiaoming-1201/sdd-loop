@@ -173,6 +173,62 @@ npm install sdd-loop
 
 用户级同理：把文件放到 `~/.config/opencode/sdd-loop.json` 即全局生效。
 
+### 飞书远程确认（可选）
+
+sdd-loop 支持通过飞书进行远程确认——门禁超时未回复时自动发送飞书交互卡片，手机端即可确认/拒绝/输入自定义答案，结果自动回注 opencode 继续工作流。
+
+#### 前置条件：创建飞书应用
+
+1. 打开[飞书开放平台](https://open.feishu.cn) → 进入**开发者后台**
+2. 创建**企业自建应用**（或已有的应用）
+3. 在**凭证与基础信息**页获取 `App ID` 和 `App Secret`
+4. 在**权限管理**中添加：
+   - `im:message`（消息读写权限）
+   - `im:message.p2p_msg:readonly`（单聊消息读取权限）
+   - `card.action.trigger`（卡片交互回调）
+5. 在**事件与回调** → **回调配置**中，订阅方式选择**长连接**，添加事件 `card.action.trigger`
+6. 发布应用（需要飞书管理员审核）
+
+> 获取接收飞书通知的用户 Open ID：让机器人向你发送一条消息，然后在飞书开放平台的消息日志中查看 `open_id`。
+
+#### 配置
+
+在用户级 `~/.config/opencode/sdd-loop.json` 或项目级配置添加：
+
+```jsonc
+{
+  "feishu": {
+    "appId": "cli_xxxxxxxxxxxxxxxxxxxx",        // 飞书应用 App ID
+    "appSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // 飞书应用 App Secret
+    "receiverOpenId": "ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // 接收通知的飞书用户 Open ID
+    "gateTimeoutMinutes": 2,                     // 门禁超时分钟数（默认 2）
+    "enabled": true                              // 是否启用（默认 false）
+  }
+}
+```
+
+#### 工作原理
+
+插件注册 `question.asked` 事件监听 → 门禁问题弹出后 N 分钟未回复 → 写入 `.workflow/pending-confirms/` 队列 → 守护进程 `scripts/feishu-daemon.mjs` 自动后台启动（插件加载时 spawn）→ 发送飞书交互卡片（动态选项按钮 + 自定义输入框）→ 手机端确认 → 结果自动喂回 opencode 继续。
+
+#### 守护进程
+
+配置 feishu 并启用后，插件加载时自动 spawn 后台 daemon（PID 锁防重复，凭据经 CLI 参数传入，日志转发到 opencode 宿主）。daemon 随 opencode 退出而停止。
+
+也支持手动终端启动：
+
+```bash
+node scripts/feishu-daemon.mjs --config ~/.config/opencode/sdd-loop.json --project <项目目录>
+```
+
+或通过环境变量（CLI 参数 > 环境变量 > 配置文件）：
+
+```bash
+FEISHU_APP_ID=cli_xxx FEISHU_APP_SECRET=xxx FEISHU_OPEN_ID=ou_xxx node scripts/feishu-daemon.mjs --project <项目目录>
+```
+
+
+
 ## 使用
 
 切换到 sdd-loop agent 后直接对话，无需特殊命令：

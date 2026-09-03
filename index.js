@@ -3,8 +3,8 @@
 // model presets from sdd-loop.json via the config hook.
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, appendFileSync, unlinkSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fork } from "node:child_process";
+import { join, dirname, basename, delimiter } from "node:path";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -738,7 +738,32 @@ function createQuestionTimeoutHook(directory, config, client) {
       try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch { /* 非关键 */ }
       return true;
     } catch (e) {
-      // 失败：还原为原始状态（answered/rejected），允许后续轮询重试
+      // 喂回失败（如宿主重启后 request 不在内存 / QuestionNotFoundError / 路由到错误实例）：
+      // 降级注入用户消息到关联会话，避免手机确认被静默丢弃。
+      if (action === "answered" && item.sessionID) {
+        // 注意：不带 [远程确认] 前缀（callDegradedInject 内部会加）
+        const injectText = `${item.question || "确认"} → ${item.answer || "确认"}`;
+        try {
+          await callDegradedInject(item.sessionID, injectText);
+          // 降级注入成功后，尝试 reject 关闭宿主 GUI 端 question
+          if (requestId && !requestId.startsWith("degraded-")) {
+            try {
+              await callQuestionReject(requestId);
+              gateLog(`[${PLUGIN_NAME}][gate] 降级注入后已 reject question（关闭 GUI，requestId=${requestId}）`);
+            } catch (e3) {
+              gateLog(`[${PLUGIN_NAME}][gate] 降级注入后 reject question 失败（${e3.message}，GUI question 可能仍挂起）`);
+            }
+          }
+          consumedSet.add(item.id);
+          item.status = "consumed";
+          try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch {}
+          gateLog(`[${PLUGIN_NAME}][gate] 喂回失败已降级注入用户消息（session=${item.sessionID}）: ${injectText}`);
+          return true;
+        } catch (e2) {
+          gateLog(`[${PLUGIN_NAME}][gate] 降级注入也失败（${e2.message}），还原为 ${action} 等待重试`);
+        }
+      }
+      // 原逻辑：还原状态，允许后续轮询重试
       item.status = action;
       try { writeFileSync(filePath, JSON.stringify(item, null, 2), "utf8"); } catch { /* 非关键 */ }
       gateLog(`[${PLUGIN_NAME}][gate] 喂回失败（${e.message}），已还原为 ${action}，等待重试`);
@@ -890,8 +915,27 @@ function createQuestionTimeoutHook(directory, config, client) {
               } else {
                 // 收集所有答案，二维数组 [[answer1], [answer2], ...]
                 const allAnswers = doneItems.map(f => [f.answer || "确认"]);
-                await callQuestionReply(item.requestId, allAnswers).catch(e => {
-                  gateLog(`[${PLUGIN_NAME}][gate] 批次喂回失败: ${e.message}，已标记 consumed`);
+                await callQuestionReply(item.requestId, allAnswers).catch(async (e) => {
+                  const sessID = doneItems.find((f) => f.sessionID)?.sessionID;
+                  if (sessID) {
+                    const mergedText = doneItems.map((f) => `${f.question || "确认"} → ${f.answer || "确认"}`).join("；");
+                    try {
+                      await callDegradedInject(sessID, mergedText);
+                      if (item.requestId && !item.requestId.startsWith("degraded-")) {
+                        try {
+                          await callQuestionReject(item.requestId);
+                          gateLog(`[${PLUGIN_NAME}][gate] 批次降级注入后已 reject question（关闭 GUI，requestId=${item.requestId}）`);
+                        } catch (e3) {
+                          gateLog(`[${PLUGIN_NAME}][gate] 批次降级注入后 reject question 失败（${e3.message}）`);
+                        }
+                      }
+                      gateLog(`[${PLUGIN_NAME}][gate] 批次喂回失败已降级注入用户消息（session=${sessID}）: ${mergedText}`);
+                    } catch (e2) {
+                      gateLog(`[${PLUGIN_NAME}][gate] 批次降级注入也失败（${e2.message}）`);
+                    }
+                  } else {
+                    gateLog(`[${PLUGIN_NAME}][gate] 批次喂回失败: ${e.message}（无 sessionID，无法降级注入）`);
+                  }
                 });
                 gateLog(`[${PLUGIN_NAME}][gate] 批次喂回：${doneItems.length} 项答案合并（requestId=${item.requestId}）`);
               }
@@ -1013,7 +1057,65 @@ function createQuestionTimeoutHook(directory, config, client) {
 // 飞书守护进程自动启动
 // ---------------------------------------------------------------------------
 
-/** 插件加载时自动启动飞书守护进程（后台，fork 子进程）。
+/** 判断路径是否像可用的 node 可执行文件（存在且 basename 含 node，如 node.exe/nodejs.exe）。 */
+function looksLikeNodeExecutable(filePath) {
+  if (typeof filePath !== "string" || filePath.length === 0) return false;
+  if (!existsSync(filePath)) return false;
+  return basename(filePath).toLowerCase().includes("node");
+}
+
+/** 解析 PATH 环境变量，逐目录查找 node 可执行文件（Windows 下找 node.exe，POSIX 下找 node/nodejs）。 */
+function findNodeInPath() {
+  const names = process.platform === "win32" ? ["node.exe"] : ["node", "nodejs"];
+  const pathValue = process.env.PATH ?? "";
+  for (const raw of pathValue.split(delimiter)) {
+    const dir = raw.trim().replace(/^"+|"+$/g, "");
+    if (!dir) continue;
+    for (const name of names) {
+      const candidate = join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/** 常见 node 安装位置的候选路径（纯路径探测，不含 PATH 扫描）。 */
+function commonNodeLocations() {
+  const candidates = [];
+  if (process.platform === "win32") {
+    for (const key of ["NVM_SYMLINK", "NVM_HOME"]) {
+      const dir = process.env[key];
+      if (dir) candidates.push(join(dir, "node.exe"));
+    }
+    for (const key of ["ProgramFiles", "ProgramFiles(x86)"]) {
+      const dir = process.env[key];
+      if (dir) candidates.push(join(dir, "nodejs", "node.exe"));
+    }
+  } else {
+    candidates.push("/usr/local/bin/node", "/usr/bin/node", "/opt/homebrew/bin/node");
+    if (process.env.NVM_DIR) candidates.push(join(process.env.NVM_DIR, "current", "bin", "node"));
+  }
+  return candidates;
+}
+
+/** 解析真实 node 可执行文件路径，供 spawn 显式指定子进程解释器。 */
+function resolveNodeExecutable() {
+  // 1) 用户显式指定
+  const explicit = process.env.SDD_NODE_PATH;
+  if (explicit && existsSync(explicit)) return explicit;
+  // 2) 宿主进程本身就是 node
+  if (looksLikeNodeExecutable(process.execPath)) return process.execPath;
+  // 3) PATH 逐目录探测
+  const fromPath = findNodeInPath();
+  if (fromPath) return fromPath;
+  // 4) 常见安装位置兜底
+  for (const candidate of commonNodeLocations()) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** 插件加载时自动启动飞书守护进程（后台，spawn 子进程）。
  *  PID 文件按项目目录隔离（.workflow/pending-confirms/.daemon.pid），
  *  不同项目各自独立守护进程，防重复启动。
  *  凭据通过 CLI 参数传入。
@@ -1059,21 +1161,44 @@ function maybeStartFeishuDaemon(config, projectDir) {
   // 确保目录存在
   try { mkdirSync(pendingDir, { recursive: true }); } catch {}
 
-  // 使用 fork 启动 Node.js 子进程
-  const child = fork(daemonScript, [
+  // 使用 spawn 显式传真实 node 可执行文件启动 daemon。
+  // 不用 fork：fork 强制要求 IPC 通道（stdio 必须含 'ipc'），配 stdio: "ignore"
+  // 在 node 下会抛 ERR_CHILD_PROCESS_IPC_REQUIRED；而 daemon 是独立长连接进程，
+  // 不需要 IPC（不使用 process.send / on('message')）。
+  // spawn(nodePath, [daemonScript, ...]) 同时解决宿主 process.execPath 不是 node
+  // （opencode.exe / Electron+bun）时 daemon 被当项目目录启动的问题。
+  const nodePath = resolveNodeExecutable();
+  if (!nodePath) {
+    console.error(`[${PLUGIN_NAME}] 未找到 node 可执行文件，daemon 自动启动跳过（可手动运行 node scripts/feishu-daemon.mjs）`);
+    return null;
+  }
+
+  const child = spawn(nodePath, [
+    daemonScript,
     "--app-id", feishuCfg.appId,
     "--app-secret", feishuCfg.appSecret,
     "--open-id", feishuCfg.receiverOpenId,
     "--project", projectDir,
   ], {
-    stdio: "ignore",
+    // stdio: ["ignore", "pipe", "pipe"]：stdin 丢弃，stdout/stderr 用 pipe 转发
+    // 到父进程 console，保证 daemon 启动日志 / WS 连接日志 / 错误堆栈在 opencode
+    // 宿主日志中可见（失败可观测性）。
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  // spawn 的 error 事件是异步事件循环抛出的，外面 try/catch 捕获不到
+  child.on("error", (err) => {
+    console.error(`[${PLUGIN_NAME}] daemon 启动失败（PID ${child.pid}）: ${err.message}`);
+  });
+  // 转发子进程日志到父进程 console
+  const logPrefix = `[${PLUGIN_NAME} daemon]`;
+  child.stdout?.on("data", (d) => process.stdout.write(`${logPrefix} ${d}`));
+  child.stderr?.on("data", (d) => process.stderr.write(`${logPrefix} ${d}`));
   child.unref();
 
-  // 写 PID 文件
-  try { writeFileSync(pidFile, String(child.pid), "utf8"); } catch {}
-
+  // 注意：不在此写 PID 文件。PID 文件由 daemon 自身写入（feishu-daemon.mjs 内部
+  // PID 锁），父进程不写以避免启动竞态——父进程 spawn 后同步写入 child.pid，
+  // 会让 daemon 启动时读到它自己的 pid，误判"另一实例在运行"而自杀。
   console.error(`[${PLUGIN_NAME}] daemon 自动启动成功（PID ${child.pid}，项目: ${projectDir}）`);
   return child;
 }
@@ -1095,6 +1220,7 @@ export {
   getAgentDisplayName,
   parseStatusFile,
   validateStatusFile,
+  resolveNodeExecutable,
 };
 
 export const id = PLUGIN_NAME;

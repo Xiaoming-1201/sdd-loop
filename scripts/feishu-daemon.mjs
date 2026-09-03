@@ -67,8 +67,10 @@ function encodeHeader(key, value) {
   fieldString(2, value, h);
   return h;
 }
-function encodeFrame(service, method, headers, payload) {
+function encodeFrame(service, method, headers, payload, seqID = 0, logID = 0) {
   const out = [];
+  if (seqID) fieldVarint(1, seqID, out);
+  if (logID) fieldVarint(2, logID, out);
   fieldVarint(3, service, out);
   fieldVarint(4, method, out);
   for (const [k, v] of headers) fieldBytes(5, Buffer.from(encodeHeader(k, v)), out);
@@ -356,16 +358,17 @@ function resolveConfirm(projectDir, confirmId, kind, answer, operatorOpenId) {
 // ---------------------------------------------------------------------------
 // 5. 卡片发送
 // ---------------------------------------------------------------------------
-function buildConfirmCard({ id, question, context, options, inputOnly }) {
+function buildConfirmCard({ id, question, context, options, inputOnly, selectedAnswer }) {
   const headerTitle = context && context.title ? String(context.title) : "需要确认";
   const bodyText = [question, context && context.detail ? `\n\n${context.detail}` : ""].join("");
 
+  const isReadOnly = !!selectedAnswer;
+
   // 选项按钮：options 有值时每选项一个按钮（第一个 primary，其余 default）；
-  // 无 options 时兜底「确认」按钮。末尾统一追加红色「拒绝」按钮。
-  // 纯输入模式（inputOnly=true）：不生成任何选项/确认/拒绝按钮，只保留输入框
+  // 无 options 时兜底「确认」按钮。
+  // 只读模式（selectedAnswer 非空）：所有按钮 disabled + 去掉 behaviors + 选中项追加"（已选）"
   // 卡片 2.0：按钮直接放 body.elements（无 action 容器），回调用 behaviors
   const elements = [
-    // 卡片 2.0：文本段落用 markdown + content（不用 div + lark_md）
     { tag: "markdown", content: bodyText },
   ];
 
@@ -375,40 +378,40 @@ function buildConfirmCard({ id, question, context, options, inputOnly }) {
       ? optList.map((opt, i) => ({
           tag: "button",
           width: "fill",
-          text: { tag: "plain_text", content: String(opt) },
+          text: { tag: "plain_text", content: String(opt) + (isReadOnly && String(opt) === String(selectedAnswer) ? "（已选）" : "") },
           type: i === 0 ? "primary" : "default",
-          behaviors: [{ type: "callback", value: { confirmId: id, action: "option", option: String(opt) } }],
+          ...(isReadOnly
+            ? { disabled: true, disabled_tips: { tag: "plain_text", content: "已选择，不可重复操作" } }
+            : { behaviors: [{ type: "callback", value: { confirmId: id, action: "option", option: String(opt) } }] }),
         }))
       : [
           {
             tag: "button",
             width: "fill",
-            text: { tag: "plain_text", content: "确认" },
+            text: { tag: "plain_text", content: "确认" + (isReadOnly && String(selectedAnswer) === "确认" ? "（已选）" : "") },
             type: "primary",
-            behaviors: [{ type: "callback", value: { confirmId: id, action: "approve" } }],
+            ...(isReadOnly
+              ? { disabled: true, disabled_tips: { tag: "plain_text", content: "已选择，不可重复操作" } }
+              : { behaviors: [{ type: "callback", value: { confirmId: id, action: "approve" } }] }),
           },
         ];
-    choiceButtons.push({
-      tag: "button",
-      width: "fill",
-      text: { tag: "plain_text", content: "拒绝" },
-      type: "danger",
-      behaviors: [{ type: "callback", value: { confirmId: id, action: "reject" } }],
-    });
     elements.push(...choiceButtons);
   }
 
-  // 输入框（2.0 中可直接放 body.elements，无需 form_container）
-  // 带 behaviors：按 Enter 或点输入框内置提交图标即触发回调，
-  // 此时 action.input_value 携带用户输入的文本（无需额外提交按钮）
+  // 输入框（只读模式 disabled）
   elements.push({
     tag: "input",
     name: "customAnswer",
     placeholder: { tag: "plain_text", content: "输入你的回答，Enter 提交" },
-    behaviors: [
-      { type: "callback", value: { confirmId: id, action: "submit" } },
-    ],
+    ...(isReadOnly
+      ? { disabled: true }
+      : { behaviors: [{ type: "callback", value: { confirmId: id, action: "submit" } }] }),
   });
+
+  // 只读模式：底部追加"已选择"提示
+  if (isReadOnly) {
+    elements.push({ tag: "markdown", content: `**已选择**：${selectedAnswer}` });
+  }
 
   return {
     schema: "2.0",
@@ -531,8 +534,10 @@ function handleCardActionEvent(event, ctx) {
   log(`[事件] card.action.trigger confirmId=${confirmId} action=${action} answer=${answer ? JSON.stringify(answer) : "(默认)"} operator=${operatorOpenId || "?"}`);
   if (confirmId) {
     resolveConfirm(ctx.projectDir, confirmId, kind, answer, operatorOpenId);
+    return { confirmId, answer };
   } else {
     logErr("[事件] 卡片回调缺少 confirmId，忽略");
+    return null;
   }
 }
 
@@ -603,6 +608,8 @@ function openSocket(wsUrl, ctx) {
     }
     if (frame.method === 0) return; // control: ping/pong
 
+    const eventReceivedAt = Date.now(); // 事件处理开始时间（用于 biz_rt 计算）
+
     const headers = Object.fromEntries(frame.headers);
     if (headers.type !== "event") {
       log(`data 帧类型: ${headers.type}，忽略`);
@@ -621,6 +628,7 @@ function openSocket(wsUrl, ctx) {
     const eventId = event.header?.event_id || `${eventType}:${Date.now()}`;
 
     // 幂等去重
+    let cardActionResult = null; // card.action.trigger 的处理结果（供 ACK 段使用）
     if (seenEventIds.has(eventId)) {
       log(`[去重] 事件 ${eventId} 已处理，跳过`);
     } else {
@@ -630,7 +638,7 @@ function openSocket(wsUrl, ctx) {
         if (eventType === "im.message.receive_v1") {
           handleMessageEvent(event, ctx);
         } else if (eventType === "card.action.trigger") {
-          handleCardActionEvent(event, ctx);
+          cardActionResult = handleCardActionEvent(event, ctx);
         } else {
           log(`[事件] 未处理的事件类型 ${eventType}: ${JSON.stringify(event).slice(0, 500)}`);
         }
@@ -639,27 +647,57 @@ function openSocket(wsUrl, ctx) {
       }
     }
 
-// 必须 ACK：原样回发 + biz_rt 头 + code:0，3 秒内完成
+// 必须 ACK：原样回发 + biz_rt 头 + code:200，3 秒内完成
     try {
-      const bizRt = String(Date.now() - startedAt);
-      // 卡片交互回调（lark_oapi SDK P2CardActionTriggerResponse 规范）：
-      // toast 和 card 放在 data 内（非顶层），与 code/msg 分开
-      const ackPayload = { code: 0, msg: "ok" };
+      // biz_rt = 事件处理耗时（非连接建立到 ACK 的总时长）
+      const bizRt = String(Date.now() - eventReceivedAt);
+      // 官方 SDK 规范：ACK payload = { code: 200, data?: base64(handlerResultJSON) }
+      const ackPayload = { code: 200 };
       if (eventType === "card.action.trigger") {
-        ackPayload.data = {
-          toast: { type: "success", content: "已收到，继续推进" },
-          card: {
-            type: "template",
-            data: {
-              schema: "2.0",
-              header: { title: { tag: "plain_text", content: "已收到回复" }, template: "green" },
-              body: { elements: [{ tag: "markdown", content: "回复已收到，继续推进。" }] },
-            },
-          },
-        };
+        // 使用事件处理阶段捕获的结果（cardActionResult = { confirmId, answer }，reject 返回 null）
+        const selectedAnswer = cardActionResult?.answer;
+        if (selectedAnswer) {
+          // 读取 pending 文件（含 question/context/options），构造只读卡片作为 raw 类型返回
+          const pendingFile = cardActionResult.confirmId
+            ? path.join(getPendingDir(ctx.projectDir), `${cardActionResult.confirmId}.json`)
+            : null;
+          let updatedCard = null;
+          try {
+            if (pendingFile && fs.existsSync(pendingFile)) {
+              const pending = JSON.parse(fs.readFileSync(pendingFile, "utf8"));
+              updatedCard = buildConfirmCard({
+                id: pending.id,
+                question: pending.question,
+                context: pending.context,
+                options: pending.options,
+                inputOnly: pending.inputOnly,
+                selectedAnswer,
+              });
+            }
+          } catch {}
+          if (updatedCard) {
+            // 方式一：raw 类型更新卡片（data 直接放卡片 JSON 本体）
+            const cardResult = {
+              toast: { type: "success", content: "已收到，继续推进" },
+              card: { type: "raw", data: updatedCard },
+            };
+            ackPayload.data = Buffer.from(JSON.stringify(cardResult)).toString("base64");
+          } else {
+            // 文件缺失 → 降级仅 Toast（方式二）
+            ackPayload.data = Buffer.from(
+              JSON.stringify({ toast: { type: "success", content: "已收到，继续推进" } })
+            ).toString("base64");
+          }
+        } else {
+          // 无 answer（reject 等）→ 仅 Toast
+          ackPayload.data = Buffer.from(
+            JSON.stringify({ toast: { type: "info", content: "已处理" } })
+          ).toString("base64");
+        }
       }
-      ws.send(encodeFrame(frame.service, 1, [...frame.headers, ["biz_rt", bizRt]], Buffer.from(JSON.stringify(ackPayload))));
-      log(`[ACK] ${eventId} ok（biz_rt=${bizRt}ms，${Date.now() - startedAt}ms 内）`);
+      // 回传原帧 SeqID/LogID（field 1/2），否则飞书服务端无法关联事件 → 判定超时
+      ws.send(encodeFrame(frame.service, 1, [...frame.headers, ["biz_rt", bizRt]], Buffer.from(JSON.stringify(ackPayload)), frame.seqID, frame.logID));
+      log(`[ACK] ${eventId} ok（biz_rt=${bizRt}ms，${Date.now() - eventReceivedAt}ms 内）`);
     } catch (e) {
       logErr("ACK 失败:", e.message);
     }
