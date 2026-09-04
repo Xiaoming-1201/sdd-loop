@@ -5,6 +5,18 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-09-03
+
+### Changed
+
+- **daemon 日志分流**：stdout（正常日志）写入 `<项目>/.workflow/pending-confirms/daemon.log`，stderr（错误）同时转发 opencode UI + 写文件。opencode 页面不再被 daemon 正常日志刷屏，完整日志仍落盘可查。
+
+## [1.2.3] - 2026-09-03
+
+### Fixed
+
+- **优化点路由**：路由表新增 `优化点 / 优化一下 / 体验优化 / 体验更好 / 微调一下` → Scenario 3（轻量修改），避免 agent 在 S2/S3/S4 间纠结。
+
 ## [1.2.2] - 2026-09-03
 
 ### Fixed

@@ -1190,10 +1190,18 @@ function maybeStartFeishuDaemon(config, projectDir) {
   child.on("error", (err) => {
     console.error(`[${PLUGIN_NAME}] daemon 启动失败（PID ${child.pid}）: ${err.message}`);
   });
-  // 转发子进程日志到父进程 console
+  // 日志分流：stdout（正常操作日志）→ daemon.log 文件；stderr（错误）→ opencode UI + 文件。
+  // opencode 页面只显示错误，避免正常日志刷屏；完整日志落盘供事后排查。
   const logPrefix = `[${PLUGIN_NAME} daemon]`;
-  child.stdout?.on("data", (d) => process.stdout.write(`${logPrefix} ${d}`));
-  child.stderr?.on("data", (d) => process.stderr.write(`${logPrefix} ${d}`));
+  const daemonLogPath = join(pendingDir, "daemon.log");
+  const appendDaemonLog = (d) => {
+    try { appendFileSync(daemonLogPath, `[${new Date().toISOString()}] ${d}`, "utf8"); } catch {}
+  };
+  child.stdout?.on("data", (d) => appendDaemonLog(d));
+  child.stderr?.on("data", (d) => {
+    appendDaemonLog(d);
+    process.stderr.write(`${logPrefix} ${d}`);
+  });
   child.unref();
 
   // 注意：不在此写 PID 文件。PID 文件由 daemon 自身写入（feishu-daemon.mjs 内部
