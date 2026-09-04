@@ -1,6 +1,6 @@
 {
   "name": "sdd-loop",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Closed-loop SDD workflow plugin for OpenCode — scene-aware orchestration with spec-driven development persistence",
   "type": "module",
   "main": "index.js",
