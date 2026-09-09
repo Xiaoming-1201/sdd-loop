@@ -293,7 +293,7 @@ question 工具在宿主不可用时，降级为纯文本列选项并明确告�
 - `.workflow/context.md` — committed，由 reviewer 审查后写入，探索结论写入 `.workflow/changes/` 而非 context.md
 - `.workflow/preferences.md` — committed，工程偏好/惯例（团队共享）
 
-创建新文件时，使用 `templates/` 下的对应模板。
+创建新文件时，使用 `templates/` 下的对应模板。**查找优先级：项目级 → 插件级**——先检查 `<项目根>/.workflow/templates/<文件名>.md`（如 `.workflow/templates/design.md`），存在则用项目级；不存在则用 `<PLUGIN_ROOT>/templates/<文件名>.md`（插件默认）。<br>（注意：`<PLUGIN_ROOT>` 即插件目录绝对路径，已注入到本 prompt 末尾的「插件目录绝对路径」中。）
 
 ## Specialist 委托
 

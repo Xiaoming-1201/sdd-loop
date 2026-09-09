@@ -17,7 +17,7 @@ You receive from the orchestrator:
 
 ## Output
 
-Produce a spec document following the template at `<PLUGIN_ROOT>/templates/spec.md`. Ensure:
+Produce a spec document following the template at `.workflow/templates/spec.md`（优先）或 `<PLUGIN_ROOT>/templates/spec.md`（插件默认）. Ensure:
 
 1. **Frontmatter** is populated: id, title, status: draft, created/updated dates, tracker
 2. **问题陈述** is from the user's perspective, not technical

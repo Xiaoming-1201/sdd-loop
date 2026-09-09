@@ -68,7 +68,7 @@ Delegate to @scout to map the existing codebase:
 
 ### 2. Build the capability map
 
-Identify the project's **capability domains** — user-perceivable functional areas (each will map 1:1 to a spec). Write `.workflow/capability-map.md` following `<PLUGIN_ROOT>/templates/capability-map.md`:
+Identify the project's **capability domains** — user-perceivable functional areas (each will map 1:1 to a spec). Write `.workflow/capability-map.md` following `.workflow/templates/capability-map.md`（存在时）或 `<PLUGIN_ROOT>/templates/capability-map.md`（插件默认）:
 
 | 能力域 | 核心代码区域 | 关联 spec | 关联 design | 状态 |
 
