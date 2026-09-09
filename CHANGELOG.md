@@ -5,6 +5,16 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2026-09-04
+
+### Fixed
+
+- **降级定时器随用户回复清除**：降级/grilling 阶段用户在 opencode 直接回复后，降级定时器未被取消 → 超时后仍写 pending 文件 → 下次启动 daemon 推送飞书通知。现通过 `part.messageID` 变化检测消息轮次切换，新消息时自动清除降级定时器。
+
+### Changed
+
+- **守护进程生命周期严格控制**：opencode 关闭时逐个停止所有 daemon(SIGTERM→3s 超时→SIGKILL)，确认进程退出后删除 `.daemon.pid`（不会残留 PID 文件）。
+
 ## [1.2.5] - 2026-09-04
 
 ### Changed

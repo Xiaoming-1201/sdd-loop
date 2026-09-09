@@ -314,7 +314,7 @@ async function scanPendingDir(projectDir, openId, appId, appSecret) {
       if (!appId || !appSecret) continue;
       try {
         const token = await getToken(appId, appSecret);
-        const msgId = await sendCard(openId, { id: item.id, question: item.question, context: item.context, options: item.options, inputOnly: item.inputOnly }, token);
+        const msgId = await sendCard(openId, { id: item.id, question: item.question, context: item.context, options: item.options, inputOnly: item.inputOnly, multi: item.multi }, token);
         item.status = "sent";
         item.feishuMessageId = msgId;
         writeConfirmFile(filePath, item);
@@ -358,18 +358,24 @@ function resolveConfirm(projectDir, confirmId, kind, answer, operatorOpenId) {
 // ---------------------------------------------------------------------------
 // 5. 卡片发送
 // ---------------------------------------------------------------------------
-function buildConfirmCard({ id, question, context, options, inputOnly, selectedAnswer }) {
+function buildConfirmCard({ id, question, context, options, inputOnly, selectedAnswer, multi }) {
   const headerTitle = context && context.title ? String(context.title) : "需要确认";
   const bodyText = [question, context && context.detail ? `\n\n${context.detail}` : ""].join("");
 
   const isReadOnly = !!selectedAnswer;
+  const isMulti = !!multi;
+
+  // 多选提示：飞书应用不支持 form_container 下的下拉多选组件，退化为输入框提示
+  const multiHint = isMulti && !isReadOnly
+    ? `\n\n**（多选）请用逗号分隔多个选项，例如 选项1, 选项3，在输入框输入后 Enter 提交。**`
+    : "";
 
   // 选项按钮：options 有值时每选项一个按钮（第一个 primary，其余 default）；
   // 无 options 时兜底「确认」按钮。
   // 只读模式（selectedAnswer 非空）：所有按钮 disabled + 去掉 behaviors + 选中项追加"（已选）"
   // 卡片 2.0：按钮直接放 body.elements（无 action 容器），回调用 behaviors
   const elements = [
-    { tag: "markdown", content: bodyText },
+    { tag: "markdown", content: bodyText + multiHint },
   ];
 
   if (!inputOnly) {
@@ -425,8 +431,8 @@ function buildConfirmCard({ id, question, context, options, inputOnly, selectedA
 }
 
 /** 发送 interactive 确认卡片，返回 message_id */
-async function sendCard(openId, { id, question, context, options, inputOnly }, token) {
-  const card = buildConfirmCard({ id, question, context, options, inputOnly });
+async function sendCard(openId, { id, question, context, options, inputOnly, multi }, token) {
+  const card = buildConfirmCard({ id, question, context, options, inputOnly, multi });
   const resp = await fetch(`${MESSAGE_URL}?receive_id_type=open_id`, {
     method: "POST",
     headers: {
@@ -671,6 +677,7 @@ function openSocket(wsUrl, ctx) {
                 context: pending.context,
                 options: pending.options,
                 inputOnly: pending.inputOnly,
+                multi: pending.multi,
                 selectedAnswer,
               });
             }

@@ -627,6 +627,7 @@ function createQuestionTimeoutHook(directory, config, client) {
   const requestCounts = new Map(); // requestId -> 该批问题数（armTimeout 时记录，批次合并用）
   const waitingSet = new Set(); // 已 answered 但等待同批其他项的 fileId
   const fedBackRequestIds = new Set(); // 已完成批次喂回的 requestId
+  const lastMsgIds = new Map(); // sessionID -> lastPartMessageId（跟踪消息轮次变化，用于检测用户回复后清除降级定时器）
 
   // gate 日志写文件（避免 console.error 被宿主回显到 opencode UI，与 diag 同理）
   const gateLogPath = join(pendingDir, "gate.log");
@@ -637,7 +638,7 @@ function createQuestionTimeoutHook(directory, config, client) {
     } catch {}
   }
 
-  function writePendingConfirm(question, options, requestId, inputOnly, sessionID) {
+  function writePendingConfirm(question, options, requestId, inputOnly, sessionID, multi) {
     mkdirSync(pendingDir, { recursive: true });
     const id = randomUUID();
     const item = {
@@ -654,6 +655,7 @@ function createQuestionTimeoutHook(directory, config, client) {
             ? options.map((o) => (typeof o === "string" ? o : o?.label ?? o?.question ?? "确认"))
             : ["确认", "拒绝"],
       inputOnly: !!inputOnly,
+      multi: !!multi, // 多选标记（原 question.multi）
       status: "pending",
       answer: null,
       feishuMessageId: null,
@@ -680,7 +682,7 @@ function createQuestionTimeoutHook(directory, config, client) {
       const qOptions = Array.isArray(q.options) ? q.options : undefined;
       const timer = setTimeout(() => {
         try {
-          writePendingConfirm(questionText, qOptions, requestId, false, sessionID);
+          writePendingConfirm(questionText, qOptions, requestId, false, sessionID, q.multi);
         } catch (e) {
           gateLog(`[${PLUGIN_NAME}][gate] 写入待确认队列失败: ${e.message}`);
         }
@@ -1013,6 +1015,21 @@ function createQuestionTimeoutHook(directory, config, client) {
         if (!text) return;
         const sessionID = part.sessionID;
         if (!sessionID) return;
+        const requestId = `degraded-${sessionID}`;
+
+        // 跟踪 messageID 变化：当 part.messageID 与上次记录的不同时，
+        // 说明开始了一轮新消息（用户回复或 agent 新一轮输出），应清除该 session 的降级定时器
+        const lastId = lastMsgIds.get(sessionID);
+        const currentMsgId = part.messageID || part.id;
+        if (lastId && lastId !== currentMsgId) {
+          // 消息轮次变化，清除降级定时器（用户已回复或对话已继续）
+          if (requestTimers.has(requestId)) {
+            clearTimers(requestId);
+            gateLog(`[${PLUGIN_NAME}][gate] 检测到新消息轮次，清除降级定时器（session=${sessionID}）`);
+          }
+        }
+        lastMsgIds.set(sessionID, currentMsgId);
+
         // 检测标记：① question 工具降级为纯文本时的固定纪律文本
         // ② grilling 等纯文本问答 skill 输出的等待标记
         // ③ grilling 格式特征（❓ Q\d 模式，不依赖 agent 严格遵守标记）
@@ -1022,12 +1039,11 @@ function createQuestionTimeoutHook(directory, config, client) {
           "纯文本列出决策点",
           "当前环境无 question 工具",
           "⏳ 请在回复中继续",
-          "⏳ 等待确认中…", // 统一确认等待标记（grilling/spec门禁/设计确认等所有等待回复场景）
+          "⏳ 等待确认中…",
         ];
         const isGrillingFormat = /❓\s*Q\d/.test(text);
         if (!isGrillingFormat && !DEGRADE_MARKERS.some((m) => text.includes(m))) return;
-        const requestId = `degraded-${sessionID}`;
-        // 已为同一会话启动过降级定时器则跳过（防重复）
+        // 已为同一会话启动过降级定时器则跳过
         if (requestTimers.has(requestId)) return;
         gateLog(`[${PLUGIN_NAME}][gate] 检测到纯文本问答等待标记（session=${sessionID}），启动超时 ${timeoutMinutes} 分钟`);
         const timer = setTimeout(() => {
@@ -1119,7 +1135,50 @@ function resolveNodeExecutable() {
  *  PID 文件按项目目录隔离（.workflow/pending-confirms/.daemon.pid），
  *  不同项目各自独立守护进程，防重复启动。
  *  凭据通过 CLI 参数传入。
- *  @returns {ChildProcess|null} 子进程引用（用于 dispose 时 kill）
+ */
+
+const daemonRegistry = new Map(); // projectDir -> { child, pidFile }
+
+/** 停止单个 daemon 子进程（先 SIGTERM 优雅退出，超时后强制杀），确认进程退出后才清理 PID 文件。 */
+function stopDaemon(entry) {
+  const { child, pidFile } = entry;
+  if (!child) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => { if (!settled) { settled = true; resolve(); } };
+    // 等待进程退出事件
+    child.once("exit", () => {
+      done();
+      // 确认进程已退出后，检查并清理 PID 文件（仅当 PID 文件仍指向已退出的进程时删除）
+      try {
+        if (existsSync(pidFile)) {
+          const curPid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+          if (curPid === child.pid) unlinkSync(pidFile);
+        }
+      } catch {}
+    });
+    child.once("error", done);
+    // 先发 SIGTERM（POSIX 优雅退出；Windows 上 SIGTERM 等效强制杀，但无妨）
+    try { child.kill("SIGTERM"); } catch { done(); return; }
+    // 3 秒超时兜底：若进程未退出，强制杀 + 等 1 秒确认
+    const timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch {}
+      setTimeout(done, 1000);
+    }, 3000);
+    child.once("exit", () => clearTimeout(timer));
+  });
+}
+
+/** 停止所有已注册的 daemon 子进程。 */
+async function stopAllDaemons() {
+  for (const [projectDir, entry] of daemonRegistry) {
+    await stopDaemon(entry);
+    daemonRegistry.delete(projectDir);
+  }
+}
+
+/** 启动守护进程（由插件 server 函数调用）。
+ *  @returns {ChildProcess|null} 子进程引用
  */
 function maybeStartFeishuDaemon(config, projectDir) {
   const feishuCfg = config?.feishu;
@@ -1204,6 +1263,8 @@ function maybeStartFeishuDaemon(config, projectDir) {
   // 注意：不在此写 PID 文件。PID 文件由 daemon 自身写入（feishu-daemon.mjs 内部
   // PID 锁），父进程不写以避免启动竞态——父进程 spawn 后同步写入 child.pid，
   // 会让 daemon 启动时读到它自己的 pid，误判"另一实例在运行"而自杀。
+  // 注册到全局 registry（供 dispose 时统一停止所有 daemon）
+  daemonRegistry.set(projectDir, { child, pidFile });
   console.error(`[${PLUGIN_NAME}] daemon 自动启动成功（PID ${child.pid}，项目: ${projectDir}）`);
   return child;
 }
@@ -1334,16 +1395,14 @@ export default {
       console.error(`[${PLUGIN_NAME}] failed to init question-timeout: ${e.message}`);
     }
     try {
-      // 插件加载时自动启动飞书守护进程（项目级目录隔离，PID 文件防重复）
-      // 返回子进程引用，随 opencode 生命周期存活（dispose 时一同退出）
-      const daemonChild = maybeStartFeishuDaemon(loadConfig().config, input.directory ?? process.cwd());
-      if (daemonChild) {
-        const prevDispose = hookGroups.dispose;
-        hookGroups.dispose = async () => {
-          if (prevDispose) { try { await prevDispose(); } catch {} }
-          try { daemonChild.kill(); } catch {}
-        };
-      }
+      // 插件加载时自动启动飞书守护进程（注册到全局 registry，dispose 时统一停止）
+      maybeStartFeishuDaemon(loadConfig().config, input.directory ?? process.cwd());
+      const prevDispose = hookGroups.dispose;
+      hookGroups.dispose = async () => {
+        if (prevDispose) { try { await prevDispose(); } catch {} }
+        // 停止所有已注册的 daemon 并清理 PID 文件（确认进程停止后删除）
+        await stopAllDaemons();
+      };
     } catch (e) {
       console.error(`[${PLUGIN_NAME}] daemon 自动启动失败: ${e.message}`);
     }
