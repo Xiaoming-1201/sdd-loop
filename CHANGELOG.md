@@ -5,6 +5,12 @@ All notable changes to the **sdd-loop** OpenCode plugin.
 The format is based on [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-09-04
+
+### Changed
+
+- **daemon 日志全部落文件**：stdout/stderr 全部写入 `<项目>/.workflow/pending-confirms/daemon.log`，不再转发 opencode UI。opencode TUI 在窗口 resize/全屏时会重绘清掉 transient 输出，UI 显示日志不可靠；文件日志持久完整，排查时查看 daemon.log 即可。
+
 ## [1.2.4] - 2026-09-03
 
 ### Changed
